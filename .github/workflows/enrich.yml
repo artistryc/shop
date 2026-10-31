@@ -1,0 +1,104 @@
+name: Analyse product photos
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Max products to analyse in each helper. Type 20 for a quick first test. 0 means everything that is new.'
+        default: '0'
+  schedule:
+    - cron: '30 19 * * *'            # every night at 01:00 India time. If nothing is new it stops in about 15 seconds (about 1 minute used).
+
+permissions:
+  contents: write
+
+concurrency:
+  group: enrich
+  cancel-in-progress: false
+
+jobs:
+  plan:                              # tiny check: how many photos are new? decides how many helpers to start (0 = none)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      count: ${{ steps.c.outputs.count }}
+      of: ${{ steps.c.outputs.of }}
+      shards: ${{ steps.c.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - id: c
+        run: |
+          P=products.json; [ -f "$P" ] || P=platform/products.json
+          if [ ! -f "$P" ]; then echo "products.json is not in the repo. Run 'Publish product feed to GitHub now' in the Google Sheet (SETUP-GUIDE Part 2.4) first."; exit 1; fi
+          N=$(python enrich/enrich.py --products "$P" --existing data/enrichment.json --out /dev/null --of 1 --shard 0 --count-only | sed -n 's/^COUNT=//p')
+          N=${N:-0}
+          # one helper per 250 new photos, at most 6, so a small update costs one helper and a big catalogue still finishes fast
+          OF=$(( (N + 249) / 250 )); [ "$OF" -gt 6 ] && OF=6; [ "$OF" -lt 1 ] && OF=1
+          SH=$(python -c "print(list(range($OF)))")
+          echo "$N new or changed photos, $OF helper(s)"
+          echo "count=$N" >> "$GITHUB_OUTPUT"; echo "of=$OF" >> "$GITHUB_OUTPUT"; echo "shards=$SH" >> "$GITHUB_OUTPUT"
+
+  analyse:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60              # a stuck job can never burn more than an hour (it used to be 340)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+            ~/.cache/pip
+          key: fashion-clip-model-v3
+      - name: Install the tools (faster once cached)
+        run: |
+          pip install --quiet pillow "numpy<2" requests
+          pip install --quiet torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet "transformers==4.46.3"
+      - name: Analyse this share of the photos
+        run: |
+          P=products.json; [ -f "$P" ] || P=platform/products.json
+          python enrich/enrich.py --products "$P" --existing data/enrichment.json --out "part-${{ matrix.shard }}.json" --shard ${{ matrix.shard }} --of ${{ needs.plan.outputs.of }} --limit ${{ inputs.limit || 0 }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: part-${{ matrix.shard }}
+          path: part-${{ matrix.shard }}.json
+
+  merge:
+    needs: [plan, analyse]
+    if: always() && needs.plan.outputs.count != '0' && needs.analyse.result != 'cancelled' && needs.analyse.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: part-*
+          merge-multiple: true
+          path: parts
+      - name: Combine and save
+        run: |
+          P=products.json; [ -f "$P" ] || P=platform/products.json
+          python enrich/merge.py data/enrichment.json "parts/part-*.json" "$P" data/enrichment.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/enrichment.json
+          if git diff --cached --quiet; then echo "Nothing new to save"; else
+            git commit -m "Update product photo analysis"
+            git pull --rebase --autostash
+            git push
+          fi
