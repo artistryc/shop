@@ -470,7 +470,7 @@ gtag('config', 'G-4QRB1X9WMF');
    FEED_PUBLIC_KEY: the public half of your feed-signing key (see generate_feed_keys.mjs). When set, product and page data is shown ONLY if its
    signature checks out, so tampered data from GitHub or a CDN is refused.
    PAGES_URL: where the help pages (privacy, returns, FAQs...) are published. STORE_CREDIT: show "Store app developed by ArtistryC.in". */
-var ALLOWED_HOSTS = ['shop.artistryc.in', 'mohit-jain-digital.github.io', 'localhost', '127.0.0.1'];   // this copy lives on the shop address
+var ALLOWED_HOSTS = ['shop.artistryc.in', 'artistryc.github.io', 'localhost', '127.0.0.1'];   // this copy lives on the shop address
 var FEED_PUBLIC_KEY = '';
 var PAGES_URL = '';
 var STORES_URL = '';      // the published stores file (platform/stores.json): switches on "Stores near you"
@@ -720,12 +720,12 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
         // unreachable — cheap insurance, no reason to remove it.
         const EMBEDDED_PRODUCTS = [];
 
-        const GITHUB_PAGES_JSON = 'https://mohit-jain-digital.github.io/artistryc-feed/products.json';
-        const JSDELIVR_JSON = 'https://cdn.jsdelivr.net/gh/mohit-jain-digital/artistryc-feed@main/products.json';
+        const GITHUB_PAGES_JSON = 'https://artistryc.github.io/shop/products.json';
+        const JSDELIVR_JSON = 'https://cdn.jsdelivr.net/gh/artistryc/shop@main/products.json';
 
         // Same GitHub repo, third path: GitHub's raw host. It is a different domain from both
         // github.io and jsDelivr, so a network/ISP/plugin block on those two doesn't take this one down.
-        const RAW_GITHUB_JSON = 'https://raw.githubusercontent.com/mohit-jain-digital/artistryc-feed/main/products.json';
+        const RAW_GITHUB_JSON = 'https://raw.githubusercontent.com/artistryc/shop/main/products.json';
 
         // A hung request used to stall the whole load with no fallback; give each JSON source 20s.
         async function fetchJsonCatalog_(url, mode) {
