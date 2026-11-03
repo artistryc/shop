@@ -45,16 +45,27 @@ class T(unittest.TestCase):
 
     def test_failures_and_bad_links_are_skipped_without_stopping(self):
         r = enrich.main(self.run_args('o.json'), classifier=Stub(), fetcher=fetcher)
-        self.assertNotIn('p-broken', r); self.assertNotIn('p-http', r); self.assertIn('row-7', r)       # product with no id gets row-N like the page builder
+        self.assertNotIn('p-http', r); self.assertIn('row-7', r)       # product with no id gets row-N like the page builder
+        self.assertEqual(r['p-broken']['x'], 1); self.assertEqual(r['p-broken']['c'], []); self.assertEqual(r['p-broken']['d'], '')   # a photo that cannot be downloaded is remembered as empty notes (try 1 of 3)
+
+    def test_broken_photo_is_retried_three_times_then_left_alone(self):
+        out = os.path.join(self.d, 'e.json'); enrich.main(self.run_args('o1.json'), classifier=Stub(), fetcher=fetcher)
+        json.dump(json.load(open(os.path.join(self.d, 'o1.json'))), open(out, 'w'))
+        for n in (2, 3):
+            r = enrich.main(['--products', self.pj, '--existing', out, '--out', os.path.join(self.d, 'o%d.json' % n)], classifier=Stub(), fetcher=fetcher)
+            self.assertEqual(list(r), ['p-broken']); self.assertEqual(r['p-broken']['x'], n)
+            ex = json.load(open(out)); ex.update(r); json.dump(ex, open(out, 'w'))
+        r = enrich.main(['--products', self.pj, '--existing', out, '--out', os.path.join(self.d, 'o4.json')], classifier=Stub(), fetcher=fetcher)
+        self.assertEqual(r, {})   # after 3 tries it stops, until the photo link changes
 
     def test_resumes_without_redoing_work(self):
         out1 = os.path.join(self.d, 'e.json'); enrich.main(self.run_args('o1.json'), classifier=Stub(), fetcher=fetcher)
         json.dump(json.load(open(os.path.join(self.d, 'o1.json'))), open(out1, 'w')); Stub.calls = 0
         r = enrich.main(['--products', self.pj, '--existing', out1, '--out', os.path.join(self.d, 'o2.json')], classifier=Stub(), fetcher=fetcher)
-        self.assertEqual(Stub.calls, 0); self.assertEqual(r, {})
+        self.assertEqual(Stub.calls, 0); self.assertEqual(list(r), ['p-broken'])   # only the photo that failed before is tried again
         P2 = [dict(p) for p in PRODUCTS]; P2[0]['img'] = 'https://i.pinimg.com/originals/aa/navy.jpg'; json.dump(P2, open(self.pj, 'w'))     # a changed photo is analysed again
         r = enrich.main(['--products', self.pj, '--existing', out1, '--out', os.path.join(self.d, 'o3.json')], classifier=Stub(), fetcher=fetcher)
-        self.assertEqual(list(r), ['p-red']); self.assertEqual(r['p-red']['c'], ['navy'])
+        self.assertEqual(sorted(r), ['p-broken', 'p-red']); self.assertEqual(r['p-red']['c'], ['navy'])
 
     def test_shards_cover_everything_exactly_once(self):
         seen = []

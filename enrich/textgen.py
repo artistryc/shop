@@ -14,13 +14,23 @@ TIPS = {
 GENERIC_TIPS = ['Check the size and delivery time with the seller on WhatsApp before you order.', 'Follow the care label and dry clean heavily worked pieces.']
 OCCASION_USE = {'wedding': 'weddings', 'festive': 'festivals', 'party': 'parties', 'daily wear': 'everyday wear', 'office': 'office wear', 'haldi or mehendi': 'haldi and mehendi functions'}
 
+TITLE_TYPES = [(r'lehenga|lehnga|ghagra|chaniya', 'Lehenga Choli'), (r'salwar|palazzo|anarkali|churidar|patiala|sharara|\bsuits?\b', 'Salwar Suits'), (r'\bsarees?\b|\bsaris?\b', 'Sarees'),
+               (r'\bgowns?\b', 'Gown' if False else 'Gowns'), (r'\bkurtis?\b', 'Kurtis')]
+
+def category_from_title(title):
+    import re
+    t = (title or '').lower()
+    for rx, cat in TITLE_TYPES:
+        if re.search(rx, t): return cat
+    return ''
+
 def join_and(items):
     items = [i for i in items if i]
     return items[0] if len(items) == 1 else (', '.join(items[:-1]) + ' and ' + items[-1] if items else '')
 
 def build(product, attrs):
     """product: dict with title/category. attrs: dict with colors, work, occasion, style (lists of strings). Returns {'d': str, 't': [str]}."""
-    cat = product.get('category') or ''
+    cat = category_from_title(product.get('title')) or product.get('category') or ''   # the title says what the garment is more reliably than a Category that may be wrong
     noun = CATEGORY_NOUN.get(cat, 'outfit')
     colors, work, occ, style = (attrs.get(k) or [] for k in ('colors', 'work', 'occasion', 'style'))
     parts = []

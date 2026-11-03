@@ -43,7 +43,7 @@ def analyse_pixels(img):
     img = img.convert('RGB'); w, h = img.size
     small = img.resize((48, max(1, round(48 * h / w))))
     arr = np.asarray(small, dtype='float32'); H, W, _ = arr.shape
-    core = arr[int(H * .2):int(H * .85), int(W * .2):int(W * .8)].reshape(-1, 3)
+    core = arr[int(H * .25):int(H * .8), int(W * .3):int(W * .7)].reshape(-1, 3)   # the middle of the photo is the garment; the sides are mostly background
     # drop near-white / near-black pixels that are usually background or shadow unless they are most of the picture
     lum = core @ [0.30, 0.59, 0.11]; keep = core[(lum > 28) & (lum < 242)]
     use = keep if len(keep) > len(core) * 0.2 else core
@@ -123,7 +123,7 @@ def fetch(url, tries=3):
 def main(argv=None, classifier=None, fetcher=fetch):
     ap = argparse.ArgumentParser()
     ap.add_argument('--products', default='products.json'); ap.add_argument('--existing', default='data/enrichment.json'); ap.add_argument('--out', required=True)
-    ap.add_argument('--shard', type=int, default=0); ap.add_argument('--of', type=int, default=1); ap.add_argument('--limit', type=int, default=0)
+    ap.add_argument('--types', default='platform/types.json', help='product types published by the platform: analysis full / colour / none per type'); ap.add_argument('--shard', type=int, default=0); ap.add_argument('--of', type=int, default=1); ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--count-only', action='store_true', help='print how many products need analysing and stop (no model, used to skip the nightly run when nothing is new)'); ap.add_argument('--no-model', action='store_true', help='colours and mosaic only (no AI model)'); ap.add_argument('--batch', type=int, default=16)
     a = ap.parse_args(argv)
     if not os.path.exists(a.products):
@@ -136,12 +136,20 @@ def main(argv=None, classifier=None, fetcher=fetch):
         try: existing = json.load(open(a.existing, encoding='utf-8'))
         except Exception: existing = {}
     model_tag = VERSION + ('-nomodel' if a.no_model and classifier is None else '')
+    tiers = {}
+    try:
+        if os.path.exists(a.types): tiers = {t['id']: t.get('analysis', 'full') for t in json.load(open(a.types, encoding='utf-8')).get('types', [])}
+    except Exception: tiers = {}
+    def tier_of(p):   # products without a type (Sheet products, older sellers) are garments, exactly as before
+        return tiers.get(p.get('type'), 'full') if p.get('type') else 'full'
     todo = []
     for p in products:
         if int(hashlib.md5(str(p['id']).encode()).hexdigest(), 16) % a.of != a.shard: continue
         e = existing.get(p['id'])
-        if e and e.get('h') == photo_hash(p.get('img')) and (e.get('m') == model_tag or (e.get('m') == VERSION and a.no_model)): continue
+        x = int((e or {}).get('x') or 0)   # x = how many times this photo could not be downloaded; after 3 tries we stop until the photo link changes
+        if e and e.get('h') == photo_hash(p.get('img')) and (x == 0 or x >= 3) and (e.get('m') == model_tag or (e.get('m') == VERSION and a.no_model)): continue
         if not (p.get('img') or '').startswith('https://'): continue
+        if tier_of(p) == 'none': continue   # groceries, services, other: the photo is never downloaded or analysed
         todo.append(p)
     if a.limit: todo = todo[:a.limit]
     if a.count_only:
@@ -162,17 +170,23 @@ def main(argv=None, classifier=None, fetcher=fetch):
             imgs = list(ex.map(lambda p: _try(fetcher, thumb_url(p['img'])), chunk))
             ok_idx = [i for i, im in enumerate(imgs) if not isinstance(im, Exception)]
             try:
-                cls = clf.classify([imgs[i] for i in ok_idx]) if (clf and ok_idx) else []
+                full_idx = [i for i in ok_idx if tier_of(chunk[i]) == 'full']
+                got = clf.classify([imgs[i] for i in full_idx]) if (clf and full_idx) else []
+                clsmap = {i: got[k] for k, i in enumerate(full_idx)} if got else {}
             except Exception as e:
-                print('  WARNING: AI step failed for this batch (%s); colours only for it' % str(e)[:200], flush=True); cls = []
+                print('  WARNING: AI step failed for this batch (%s); colours only for it' % str(e)[:200], flush=True); clsmap = {}
             for j, i in enumerate(ok_idx):
                 p, im = chunk[i], imgs[i]
-                px = analyse_pixels(im); c = cls[j] if cls else {}
+                px = analyse_pixels(im); c = clsmap.get(i, {}); full = tier_of(p) == 'full'   # 'colour' tier (jewellery, footwear): colours only
                 attrs = {'colors': px['colors'], 'work': c.get('work', []), 'occasion': c.get('occasion', []), 'style': c.get('style', [])}
-                t = textgen.build(p, attrs)
+                t = textgen.build(p, attrs) if full else {'d': '', 't': []}
                 result[p['id']] = {'h': photo_hash(p['img']), 'm': model_tag, 'c': attrs['colors'], 'w': attrs['work'], 'o': attrs['occasion'], 's': attrs['style'], 'd': t['d'], 't': t['t'], 'lq': px['lq'], 'ar': px['ar']}
             for i, im in enumerate(imgs):
-                if isinstance(im, Exception): failed += 1; print('  skipped %s: %s' % (chunk[i]['id'], im))
+                if isinstance(im, Exception):
+                    failed += 1; pid = chunk[i]['id']; hh = photo_hash(chunk[i].get('img')); prev = existing.get(pid) or {}
+                    n = (int(prev.get('x') or 0) if prev.get('h') == hh else 0) + 1
+                    result[pid] = {'h': hh, 'm': model_tag, 'x': n, 'c': [], 'w': [], 'o': [], 's': [], 'd': '', 't': [], 'lq': '', 'ar': 0}   # empty on purpose: the product still goes live, only the photo notes are missing
+                    print('  skipped %s: %s (try %d of 3)' % (pid, im, n))
             print('  %d/%d' % (min(s + a.batch, len(todo)), len(todo)), flush=True)
     json.dump(result, open(a.out, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
     print('wrote %d, skipped %d' % (len(result), failed))
