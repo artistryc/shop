@@ -85,6 +85,7 @@ const DEFAULTS = {
   googleSiteVerification: [],
   categoryMap: {},
   directoryFile: 'platform/directory.json',
+  typesFile: 'platform/types.json',
   enrichmentFile: 'data/enrichment.json',
   platformApiUrl: '',            // your Apps Script web app address (used by the privacy-request form)
   turnstileSiteKey: '',          // only if you switched Cloudflare Turnstile on in the platform
@@ -149,12 +150,6 @@ const FILLER = new Set();   // descriptions repeated across the catalogue carry 
 function buildDescription(it, forFeed) {
   const real = plain(it.desc);
   if (real.length >= 60 && !FILLER.has(real)) return real.slice(0, 4900);
-  const en = ENR[it.id];
-  if (en && en.d) {   // written from what the photo shows (see enrich/textgen.py); the feed gets it without the "ask the seller" sentence
-    let d = en.d; if (forFeed) d = d.replace(/\s*Colour and style notes are taken from[^]*$/, '');
-    const tg = tagList(it).slice(0, 5); if (tg.length) d += ' Tags: ' + tg.join(', ') + '.';
-    return (cleanTitle(it.title) + '. ' + d).slice(0, 4900);
-  }
   const t = cleanTitle(it.title), tags = tagList(it).slice(0, 6);
   let d = t + '. ' + (it.category ? it.category + ' from ' : 'From ') + cfg.brandName + '.';
   if (tags.length) d += ' Style: ' + tags.join(', ') + '.';
@@ -162,7 +157,36 @@ function buildDescription(it, forFeed) {
   if (!forFeed) d += ' Ask on WhatsApp for size, colour options and delivery.';
   return d.slice(0, 4900);
 }
-const colorsOf = it => { const own = (Array.isArray(it.colors) ? it.colors : []).map(x => String(x).trim()).filter(Boolean); if (own.length) return own; const en = ENR[it.id]; return en && en.c ? en.c.map(c => c.replace(/\b[a-z]/g, m => m.toUpperCase())) : []; };
+// ---- Colours, "Good for" and "How to style it": ONLY from what the seller or master wrote or approved in the Sheet / dashboard
+// (Colors column, Tags, Shopper tip). The photo analysis never shows on a page by itself; it only makes suggestions in the Sheet.
+// The same word lists are used in the shop app, so the product page and the pop-up always agree.
+const COLOUR_WORDS = ['red','maroon','wine','burgundy','pink','hot pink','rani','magenta','orange','rust','mustard','yellow','lemon','lime green','green','bottle green','olive','mint','sea green','teal','turquoise','sky blue','blue','royal blue','navy','purple','violet','lavender','mauve','brown','coffee','beige','cream','ivory','off white','white','grey','gray','black','gold','silver','peach','coral','multicolour','multicolor','multi'];
+const OCCASION_WORDS = ['wedding','bridal','bride','haldi','mehendi','mehndi','sangeet','engagement','reception','festive','festival','diwali','navratri','garba','eid','karwa chauth','party','cocktail','office','work wear','daily wear','casual','puja','pooja','travel','brunch','evening'];
+const titleCase = x => String(x).replace(/\b[a-z]/g, m => m.toUpperCase());
+const wordsIn = (tags, list) => { const out = []; for (const t of tags) { const l = t.toLowerCase(); const w = list.filter(x => new RegExp('(^|[^a-z])' + x + '([^a-z]|$)').test(l)); if (w.length && !out.some(o => o.toLowerCase() === t.toLowerCase())) out.push(t); } return out; };
+const hideOf = it => new Set(String(it.hide || '').split(/[,\s]+/).filter(Boolean));   // c = colours, g = good for, s = how to style
+// A tag that is only colour words ("Mustard Yellow") is kept whole; otherwise the colour words found in it are used ("Green zari saree" -> Green).
+function coloursFromTags(tags) {
+  const out = [];
+  for (const t of tags) {
+    const hit = COLOUR_WORDS.filter(w => new RegExp('(^|[^a-z])' + w + '([^a-z]|$)', 'i').test(t));
+    if (!hit.length) continue;
+    const rest = t.toLowerCase(); let left = rest; hit.sort((a, b) => b.length - a.length).forEach(w => { left = left.split(w).join(' '); });
+    const found = /[a-z]/.test(left.replace(/\b(and|with|in|of|colou?r)\b/g, '')) ? hit.filter((w, i) => !hit.some((o, j) => j !== i && o.length > w.length && o.indexOf(w) !== -1)) : [t];
+    found.forEach(x => { const v = titleCase(x); if (!out.some(o => o.toLowerCase() === v.toLowerCase())) out.push(v); });
+  }
+  return out;
+}
+function infoOf(it) {
+  const hide = hideOf(it), tags = tagList(it);
+  const own = (Array.isArray(it.colors) ? it.colors : []).map(x => String(x).trim()).filter(Boolean);
+  return {
+    colors: hide.has('c') ? [] : (own.length ? own : coloursFromTags(tags)),
+    good: hide.has('g') ? [] : wordsIn(tags, OCCASION_WORDS).map(titleCase),
+    style: hide.has('s') ? [] : String(it.shopperTip || '').split(/\n|\||;/).map(x => x.trim()).filter(Boolean).slice(0, 5)
+  };
+}
+const colorsOf = it => { const own = (Array.isArray(it.colors) ? it.colors : []).map(x => String(x).trim()).filter(Boolean); return own.length ? own : coloursFromTags(tagList(it)); };   // the Google / Meta feeds always get the colour, even when the page hides it
 const sizesOf = it => (Array.isArray(it.sizes) ? it.sizes : []).map(x => String(x).trim()).filter(Boolean);
 function availabilityOf(it) {
   if (it.stock === 'Out of Stock') return 'out_of_stock';
@@ -216,6 +240,9 @@ const RADIUS = { round: '30px', soft: '14px', square: '4px' }[BRAND.corners] || 
 let ENR = {};
 try { ENR = JSON.parse(fs.readFileSync(path.join(repoDir, cfg.enrichmentFile), 'utf8')); console.log('Photo analysis: ' + Object.keys(ENR).length + ' products'); } catch (e) { /* not run yet: pages are built without it */ }
 let DIRECTORY = [];
+let TYPES = {};   // product types from the dashboard: analysis tier and whether the type goes to Google Shopping / Meta
+try { for (const t of (JSON.parse(fs.readFileSync(path.join(repoDir, cfg.typesFile), 'utf8')).types || [])) TYPES[t.id] = t; } catch (e) { /* no types published yet: every product is treated as a garment, as before */ }
+const typeOfItem = it => (it.type && TYPES[it.type]) || null;
 try { DIRECTORY = JSON.parse(fs.readFileSync(path.join(repoDir, cfg.directoryFile), 'utf8')); if (!Array.isArray(DIRECTORY)) DIRECTORY = []; } catch (e) { /* no vendor directory yet */ }
 
 // unique web addresses, or stop (a clash would make two products share one page)
@@ -253,6 +280,9 @@ h1{font-size:22px;line-height:1.25;margin:0 0 8px}h2{font-size:15px;text-transfo
 header.top{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.96);backdrop-filter:blur(8px)}header.top .brand{display:inline-flex;align-items:center;gap:8px;color:var(--b)}header.top .brand img{height:34px;width:auto;max-width:150px;display:block}header.top nav a.shop{background:var(--b);color:var(--bi);padding:8px 16px;border-radius:999px;font-weight:800}
 .pn{display:flex;gap:8px;align-items:center;justify-content:space-between;margin:0 0 12px;flex-wrap:wrap}.pn a{display:inline-flex;align-items:center;min-height:40px;padding:0 16px;border-radius:999px;background:#f1f1f4;text-decoration:none;font-size:14px;font-weight:700}.pn a.dis{opacity:.4;pointer-events:none}.pn .mid{display:flex;gap:8px}
 .fchips{display:flex;gap:8px;overflow-x:auto;margin:0 0 14px;padding:2px 0 6px;list-style:none}.fchips a{flex:0 0 auto;white-space:nowrap;padding:8px 14px;border:1px solid #d1d5db;border-radius:999px;font-size:13px;text-decoration:none}.fchips a.on{background:var(--b);color:var(--bi);border-color:var(--b)}
+header.top{box-shadow:0 1px 2px rgba(0,0,0,.06);border-bottom:1px solid #f3f4f6;padding:14px 16px}header.top .brand{letter-spacing:-.05em;font-size:20px;font-weight:900}header.top nav a:not(.shop){background:#f3f4f6;border-radius:999px;padding:8px 14px;font-weight:700;color:#111}
+.stock{font-size:12px;font-weight:700;margin:2px 0 8px}.stock.ok{color:#15803d}.stock.no{color:#9ca3af}.stock.ask{color:#111}a.orig{font-size:12px;font-weight:700;text-decoration:underline}
+.btn{font-weight:700;min-height:52px}.btn.wa{background:#25d366;color:#fff}.btn.alt{background:var(--b);color:var(--bi)}
 footer{border-top:1px solid #eee;margin-top:36px;padding:20px 16px;font-size:13px;color:#666}footer a{margin-right:14px}`;
 
 function analyticsSnippet() {
@@ -343,17 +373,20 @@ function productPage(it) {
   if (images.length > 1) h += '<div class="thumbs">' + images.slice(1).map(u => `<div class="t"><img src="${esc(thumb(u))}" alt="${esc(title)}" width="72" height="96" loading="lazy" decoding="async"${fallbackAttr(thumb(u), u)}></div>`).join('') + '</div>';
   h += `</div><div><h1>${esc(title)}</h1>`;
   h += priced ? `<p class="price">&#8377;${money(it.price)}</p>` : `<p class="price" style="font-size:18px">Price on request</p>`;
+  const stockWord = avail === 'out_of_stock' ? 'Out of Stock' : (avail === 'backorder' ? 'Pre-Order' : (it.stock === 'Ask & Order' ? 'Ask & Order' : 'In Stock'));
+  h += `<p class="stock ${avail === 'out_of_stock' ? 'no' : (stockWord === 'Ask & Order' ? 'ask' : 'ok')}">${esc(stockWord)}</p>`;
+  if (isHttps(it.externalLink)) h += `<p><a class="orig" href="${esc(it.externalLink)}" target="_blank" rel="nofollow noopener">View original listing &#8599;</a></p>`;
   h += `<p class="muted">${esc(stockLine)}</p>`;
-  if (cols.length) h += `<p class="muted">Colours: ${esc(cols.join(', '))}</p>`;
+  const inf = infoOf(it);
+  if (inf.colors.length) h += `<p class="muted">Colours: ${esc(inf.colors.join(', '))}</p>`;
   if (sizes.length) h += `<p class="muted">Sizes: ${esc(sizes.join(', '))}</p>`;
-  h += `<div class="btns"><a class="btn wa" href="${esc(wa)}" rel="nofollow noopener">Order on WhatsApp</a><a class="btn alt" href="${esc(cfg.siteUrl + '/#pin=' + encodeURIComponent(it.id))}">Add to cart</a></div>`;
+  h += `<div class="btns"><a class="btn wa" href="${esc(wa)}" rel="nofollow noopener">Order on WhatsApp</a><a class="btn alt" href="${esc('/#pin=' + encodeURIComponent(it.id) + '&add=1')}" rel="nofollow">Add to Cart</a></div>`;
   h += `<p>${esc(desc)}</p>`;
   if (tags.length) h += '<ul class="tags">' + tags.map(t => `<li>${esc(t)}</li>`).join('') + '</ul>';
-  const en = ENR[it.id];
-  if (en && ((en.o && en.o.length) || (en.t && en.t.length))) {
-    if (en.o && en.o.length) h += '<h3>Good for</h3><ul class="tags">' + en.o.map(o => `<li>${esc(o)}</li>`).join('') + '</ul>';
-    if (en.t && en.t.length) h += '<h3>How to style it</h3><ul class="tips">' + en.t.map(t => `<li>${esc(t)}</li>`).join('') + '</ul>';
-  }
+  if (Array.isArray(it.variants) && it.variants.length) h += '<h3>' + esc(it.variantLabel || 'Options') + '</h3><ul class="tips">' + it.variants.map(v => `<li><b>${esc(v.n)}</b>${Number(v.p) > 0 ? ': &#8377;' + Number(v.p).toLocaleString('en-IN') : ''}${v.s === 'Out of Stock' ? ' (out of stock)' : ''}</li>`).join('') + '</ul>';
+  if (Array.isArray(it.extra) && it.extra.length) h += '<h3>Details</h3><ul class="tips">' + it.extra.slice(0, 12).map(x => `<li><b>${esc(x.l)}:</b> ${esc(x.v)}</li>`).join('') + '</ul>';
+  if (inf.good.length) h += '<h3>Good for</h3><ul class="tags">' + inf.good.map(o => `<li>${esc(o)}</li>`).join('') + '</ul>';
+  if (inf.style.length) h += '<h3>How to style it</h3><ul class="tips">' + inf.style.map(t => `<li>${esc(t)}</li>`).join('') + '</ul>';
   h += `<p class="muted" style="margin-top:14px">Category: <a href="${esc(catUrl(cat, 1))}">${esc(cat)}</a> &middot; Sold by ${vendorLink(it)}</p></div></div>`;
   if (related.length) h += `<h2>More ${esc(cat)}</h2><div class="grid">` + related.map(r => cardHtml(r, false)).join('') + '</div>';
   h += '</div>' + pageBottom();
@@ -527,6 +560,7 @@ try { write('CNAME', new URL(cfg.siteUrl).hostname + '\n'); } catch (e) { /* not
 const feedItems = [], skipped = { noPrice: 0, badImage: 0 };
 for (const it of items) {
   if (!(Number(it.price) > 0)) { skipped.noPrice++; continue; }
+  if (typeOfItem(it) && typeOfItem(it).shopping === false) continue;   // for example services: not sold through Shopping / Meta catalogues
   feedItems.push(it);
 }
 const feedRow = it => {
@@ -538,7 +572,7 @@ const feedRow = it => {
     `<g:availability>${availabilityOf(it)}</g:availability><g:price>${Number(it.price).toFixed(2)} ${xesc(cfg.currency)}</g:price>` +
     `<g:brand>${xesc(it.vendor || cfg.brandName)}</g:brand><g:condition>new</g:condition><g:identifier_exists>no</g:identifier_exists>` +
     `<g:google_product_category>${xesc(googleCategory(it))}</g:google_product_category><g:product_type>${xesc(it.category || 'Other')}</g:product_type>` +
-    `<g:gender>${genderOf(it)}</g:gender><g:age_group>${ageOf(it)}</g:age_group>` +
+    (typeOfItem(it) && typeOfItem(it).analysis === 'none' ? '' : `<g:gender>${genderOf(it)}</g:gender><g:age_group>${ageOf(it)}</g:age_group>`) +
     (cols.length ? `<g:color>${xesc(cols.slice(0, 3).join('/'))}</g:color>` : '') + (sizes.length ? `<g:size>${xesc(sizes[0])}</g:size>` : '') +
     '</item>';
 };
