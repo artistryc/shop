@@ -341,14 +341,19 @@ gtag('config', 'G-4QRB1X9WMF');
                         <p id="mDesc" class="text-sm md:text-base text-gray-600 leading-relaxed line-clamp-1 transition-all duration-300"></p>
                         <button id="readMoreBtn" onclick="toggleReadMore()" class="mt-2 text-xs font-bold text-black hover:underline flex items-center gap-1">Read full description <span>↓</span></button>
                     </div>
+                    <div id="mExtraInfo" style="display:none" class="mb-6 text-sm space-y-1"></div>
+                    <div id="mInfoBox" style="display:none" class="mb-6 space-y-4">
+                        <div id="mColourInfo" style="display:none"><p class="text-[10px] uppercase tracking-widest text-gray-400 mb-2">Colours</p><div id="mColourInfoChips" class="flex flex-wrap gap-2"></div></div>
+                        <div id="mGoodInfo" style="display:none"><p class="text-[10px] uppercase tracking-widest text-gray-400 mb-2">Good for</p><div id="mGoodChips" class="flex flex-wrap gap-2"></div></div>
+                    </div>
                     <div id="mTipBox" class="bg-black text-white p-4 rounded-2xl mb-6" style="display:none">
-                        <p class="text-[10px] uppercase tracking-widest opacity-60 mb-1">Stylist's Tip</p>
+                        <p class="text-[10px] uppercase tracking-widest opacity-60 mb-1">How to style it</p>
                         <p id="mTip" class="text-sm leading-relaxed"></p>
                     </div>
                     <a id="mExternalLink" href="#" target="_blank" style="display:none" class="inline-flex items-center gap-1 text-xs font-bold underline mb-4">View original listing ↗</a>
                     <div id="mVariantBox" style="display:none" class="mb-6">
                         <div id="mSizeRow" style="display:none" class="mb-3">
-                            <p class="text-[10px] uppercase tracking-widest text-gray-400 mb-2">Size</p>
+                            <p id="mSizeLabel" class="text-[10px] uppercase tracking-widest text-gray-400 mb-2">Size</p>
                             <div id="mSizeChips" class="flex flex-wrap gap-2"></div>
                         </div>
                         <div id="mColorRow" style="display:none">
@@ -399,7 +404,8 @@ gtag('config', 'G-4QRB1X9WMF');
             <h2 class="text-lg font-black mb-1">Your Details</h2>
             <p class="text-xs text-gray-400 mb-4">Saved on this device only — used to speed up checkout and order updates. No password needed.</p>
             <input id="profName" placeholder="Name" class="w-full bg-gray-100 rounded-xl px-4 py-3 mb-3 text-base">
-            <input id="profPhone" placeholder="WhatsApp number" class="w-full bg-gray-100 rounded-xl px-4 py-3 mb-4 text-base">
+            <input id="profPhone" placeholder="WhatsApp number" class="w-full bg-gray-100 rounded-xl px-4 py-3 mb-1 text-base">
+            <input id="profPin" inputmode="numeric" maxlength="6" placeholder="Pincode (optional): to see stores near you" class="w-full bg-gray-100 rounded-xl px-4 py-3 mb-4 text-base">
             <button onclick="saveProfile()" class="w-full bg-black text-white py-3 rounded-xl font-bold">Save</button>
         </div>
     </div>
@@ -473,7 +479,7 @@ gtag('config', 'G-4QRB1X9WMF');
 var ALLOWED_HOSTS = ['shop.artistryc.in', 'artistryc.github.io', 'localhost', '127.0.0.1'];   // this copy lives on the shop address
 var FEED_PUBLIC_KEY = '';
 var PAGES_URL = '';
-var STORES_URL = '';      // the published stores file (platform/stores.json): switches on "Stores near you"
+var STORES_URL = 'https://raw.githubusercontent.com/artistryc/shop/main/platform/stores.json';      // the published stores file (platform/stores.json): switches on "Stores near you"
 var PINCODES_BASE = '';   // folder holding the pincode files (platform/pincodes/), made by build_pincodes.py
 var STORE_CREDIT = false;
 (function () {
@@ -859,6 +865,8 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             normalizeUrl_();
             const pinFromHash = applyStateFromHash_();
             pendingHashId = pinFromHash;
+            window.__addOnOpen = (pinFromHash && hashParams_().get('add') === '1') ? pinFromHash : null;
+            if (window.__addOnOpen) writeHash_(p => p.delete('add'));   // the cart add happens once, then the address is tidy again
             loadPages_();
             initNear_();
 
@@ -1120,7 +1128,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
         }
         async function runNear_(origin, remember) {
             let rows; try { rows = await findNear_(origin); } catch (e) { console.warn('Stores near you failed:', e && e.message); return { error: 'We could not load the store list just now. Please try again in a moment.' }; }
-            if (remember) nearSet_(remember); nearFilter_ = rows.length ? nearFilterFor_(rows) : null; try { applyFilters_(); renderNextPage(true); } catch (e) { /* page not ready */ } showNearStrip_(origin, rows); return { ok: true };
+            if (remember) nearSet_(remember); nearFilter_ = rows.length ? nearFilterFor_(rows) : null; try { applyFilters_(); if (nearFilter_ && !filteredData.length) { nearFilter_ = null; applyFilters_(); } renderNextPage(true); } catch (e) { /* page not ready */ } showNearStrip_(origin, rows); return { ok: true };
         }
         function nearFilterFor_(rows) { const vendors = new Set(rows.map(r => r.vendor)), locs = new Set(rows.map(r => r.id).filter(Boolean)); return { vendors, locs }; }
         // Pincode first-digits fallback: used when the pincode-to-location data is not installed. 6 digits same = in your pincode, then same district, then same region.
@@ -1134,7 +1142,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
                     note: c === 6 ? 'In your pincode' : c >= 4 ? 'Very near you (pincode ' + p + ')' : c === 3 ? 'In your area (pincode ' + p + ')' : 'In your region (pincode ' + p + ')' });
             }
             rows.sort((a, b) => b.c - a.c); const top = rows.slice(0, 12);
-            nearSet_(pin); nearFilter_ = top.length ? nearFilterFor_(top) : null; try { applyFilters_(); renderNextPage(true); } catch (e) { /* page not ready */ }
+            nearSet_(pin); nearFilter_ = top.length ? nearFilterFor_(top) : null; try { applyFilters_(); if (nearFilter_ && !filteredData.length) { nearFilter_ = null; applyFilters_(); } renderNextPage(true); } catch (e) { /* page not ready */ }
             showNearStrip_({ label: pin }, top); return { ok: true };
         }
         // Name + WhatsApp + pincode go to the master's "nearby_leads" tab (the shopper ticked the consent box).
@@ -1151,6 +1159,10 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             if (!url) { alert('Video call is not available right now. Please message the seller on WhatsApp.'); return; }
             window.open(url, '_blank', 'noopener');
         }
+        // Pincode saved in the shopper's profile: finds nearby stores straight away (and again on every visit).
+        async function nearFromProfile_(pin) {
+            try { nearSet_(pin); const pt = await pincodePoint_(pin); if (pt) await runNear_({ lat: pt.lat, lng: pt.lng, label: pin }, pin); else await runNearPrefix_(pin); } catch (e) { /* stores list not available: nothing to show */ }
+        }
         function openNearDialog_() {
             const old = document.getElementById('nearModal'); if (old) old.remove();
             const ov = nearEl_('div', 'position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:12px'); ov.id = 'nearModal'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'Stores near you');
@@ -1158,8 +1170,8 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             box.appendChild(nearEl_('h2', 'font-size:18px;font-weight:800;margin:0 0 4px', 'Stores near you')); box.appendChild(nearEl_('p', 'font-size:13px;color:#6b7280;margin:0 0 12px', 'Enter your pincode and we will show the closest stores. It stays on this phone.'));
             const pin = nearEl_('input', 'width:100%;border:1px solid #d1d5db;border-radius:10px;padding:11px 12px;font-size:16px'); pin.type = 'text'; pin.inputMode = 'numeric'; pin.maxLength = 6; pin.placeholder = '6-digit pincode'; pin.autocomplete = 'postal-code'; pin.value = /^\d{6}$/.test(nearGet_()) ? nearGet_() : ''; box.appendChild(pin);
             const fStyle = 'width:100%;border:1px solid #d1d5db;border-radius:10px;padding:11px 12px;font-size:16px;margin-top:8px'; let lead0 = {}; try { lead0 = JSON.parse(localStorage.getItem('near_lead') || '{}') || {}; } catch (e) { lead0 = {}; }
-            const leadName = nearEl_('input', fStyle); leadName.type = 'text'; leadName.maxLength = 80; leadName.placeholder = 'Your name'; leadName.autocomplete = 'name'; leadName.value = lead0.name || '';
-            const leadWa = nearEl_('input', fStyle); leadWa.type = 'tel'; leadWa.inputMode = 'numeric'; leadWa.maxLength = 14; leadWa.placeholder = 'Your WhatsApp number'; leadWa.autocomplete = 'tel'; leadWa.value = lead0.wa || '';
+            const leadName = nearEl_('input', fStyle); leadName.type = 'text'; leadName.maxLength = 80; leadName.placeholder = 'Your name'; leadName.autocomplete = 'name'; leadName.value = lead0.name || (profile && profile.name) || '';
+            const leadWa = nearEl_('input', fStyle); leadWa.type = 'tel'; leadWa.inputMode = 'numeric'; leadWa.maxLength = 14; leadWa.placeholder = 'Your WhatsApp number'; leadWa.autocomplete = 'tel'; leadWa.value = lead0.wa || (profile && profile.phone) || '';
             const leadLbl = nearEl_('label', 'display:flex;gap:8px;align-items:flex-start;font-size:12px;color:#6b7280;margin-top:10px'); const leadOk = nearEl_('input'); leadOk.type = 'checkbox'; leadOk.checked = !!lead0.wa; leadLbl.appendChild(leadOk); leadLbl.appendChild(nearEl_('span', '', 'I agree to be contacted on WhatsApp about shops and products near me.'));
             box.appendChild(leadName); box.appendChild(leadWa); box.appendChild(leadLbl);
             const msg = nearEl_('div', 'color:#b91c1c;font-weight:600;font-size:13px;margin-top:8px;min-height:0'); msg.setAttribute('role', 'alert'); box.appendChild(msg);
@@ -1872,6 +1884,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             const item = allData.find(i => i.id === id);
             if (!item) return;
             if (item._d && !item._full) { openModalWhenDetails_(item, id); return; }
+            applyHide_(item);
             currentItem = item;
             selectedSize = null; selectedColor = null;
             currentImageIndex = 0;
@@ -1888,11 +1901,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
                 btnEl.innerHTML = 'Read more <span>↓</span>'; btnEl.style.display = item.desc.length > 40 ? 'flex' : 'none';
             }
 
-            const tipBox = document.getElementById('mTipBox');
-            if (item.shopperTip && item.shopperTip.trim()) {
-                document.getElementById('mTip').innerText = item.shopperTip;
-                tipBox.style.display = 'block';
-            } else { tipBox.style.display = 'none'; }
+            renderInfo_(item);
 
             const extLink = document.getElementById('mExternalLink');
             if (item.externalLink) { extLink.href = item.externalLink; extLink.style.display = 'inline-flex'; }
@@ -1907,6 +1916,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             document.body.style.overflow = 'hidden';
             updatePinNav_();
             resetModalScroll_();
+            if (window.__addOnOpen === id) { window.__addOnOpen = null; autoAddFromPage_(item); }
 
             gtag('event', 'view_item', { currency: 'INR', value: item.price || 0,
                 items: [{ item_id: item.id, item_name: item.title, item_brand: item.vendor, item_category: item.category, price: item.price || 0 }] });
@@ -1994,10 +2004,59 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
         }
 
         // ---------- Variants (size/colour) ----------
+        // ---------- Colours, "Good for" and "How to style it" ----------
+        // Shown ONLY from what the seller / master wrote or approved (Colors column, Tags, Shopper tip). The photo analysis never shows by itself.
+        // Same word lists as the Google pages, so the pop-up and the product page always agree. item.hide = "c,g,s" switches a part off for this product or seller.
+        const COLOUR_WORDS_ = ['red','maroon','wine','burgundy','pink','hot pink','rani','magenta','orange','rust','mustard','yellow','lemon','lime green','green','bottle green','olive','mint','sea green','teal','turquoise','sky blue','blue','royal blue','navy','purple','violet','lavender','mauve','brown','coffee','beige','cream','ivory','off white','white','grey','gray','black','gold','silver','peach','coral','multicolour','multicolor','multi'];
+        const OCCASION_WORDS_ = ['wedding','bridal','bride','haldi','mehendi','mehndi','sangeet','engagement','reception','festive','festival','diwali','navratri','garba','eid','karwa chauth','party','cocktail','office','work wear','daily wear','casual','puja','pooja','travel','brunch','evening'];
+        function titleCase_(x) { return String(x).replace(/\b[a-z]/g, m => m.toUpperCase()); }
+        function hasWord_(t, w) { return new RegExp('(^|[^a-z])' + w + '([^a-z]|$)', 'i').test(t); }
+        function tagsOf_(item) { return String(item.tags || '').split(/[,\n]/).map(x => x.trim()).filter(x => x && x.length < 60 && !/^(women|men|kids) ?wear$/i.test(x)); }
+        function coloursFromTags_(tags) {
+            const out = [];
+            tags.forEach(t => {
+                const hit = COLOUR_WORDS_.filter(w => hasWord_(t, w)); if (!hit.length) return;
+                let left = t.toLowerCase(); hit.slice().sort((a, b) => b.length - a.length).forEach(w => { left = left.split(w).join(' '); });
+                const only = !/[a-z]/.test(left.replace(/\b(and|with|in|of|colou?r)\b/g, ''));
+                const found = only ? [t] : hit.filter((w, i) => !hit.some((o, j) => j !== i && o.length > w.length && o.indexOf(w) !== -1));
+                found.forEach(x => { const v = titleCase_(x); if (!out.some(o => o.toLowerCase() === v.toLowerCase())) out.push(v); });
+            });
+            return out;
+        }
+        function hideSet_(item) { return new Set(String(item.hide || '').split(/[,\s]+/).filter(Boolean)); }
+        function applyHide_(item) { // "hide colours" also removes the colour choice chips for this product
+            if (item._hideDone) return; item._hideDone = true;
+            if (hideSet_(item).has('c') && item.colors && item.colors.length) { item._ownColors = item.colors; item.colors = []; }
+        }
+        function renderInfo_(item) {
+            const hide = hideSet_(item), tags = tagsOf_(item);
+            const ownColours = (item.colors && item.colors.length) || (item._ownColors && item._ownColors.length);
+            const colours = (hide.has('c') || ownColours) ? [] : coloursFromTags_(tags);   // sheet colours already show as the Colour choice below
+            const good = hide.has('g') ? [] : tags.filter(t => OCCASION_WORDS_.some(w => hasWord_(t, w))).map(titleCase_);
+            const chips = (id, list) => { const el = document.getElementById(id); el.innerHTML = list.map(x => `<span class="px-3 py-1 rounded-full border border-gray-200 text-xs text-gray-700">${esc_(x)}</span>`).join(''); el.parentNode.style.display = list.length ? 'block' : 'none'; };
+            const ex = document.getElementById('mExtraInfo'), exList = Array.isArray(item.extra) ? item.extra.slice(0, 12) : [];
+            ex.innerHTML = exList.map(x => `<div><span class="text-gray-400">${esc_(x.l)}:</span> <span class="font-semibold">${esc_(x.v)}</span></div>`).join(''); ex.style.display = exList.length ? 'block' : 'none';
+            chips('mColourInfoChips', colours); chips('mGoodChips', good);
+            document.getElementById('mInfoBox').style.display = (colours.length || good.length) ? 'block' : 'none';
+            const lines = hide.has('s') ? [] : String(item.shopperTip || '').split(/\n|\||;/).map(x => x.trim()).filter(Boolean).slice(0, 5);
+            const tipBox = document.getElementById('mTipBox'), tipEl = document.getElementById('mTip');
+            if (lines.length) { tipEl.style.whiteSpace = 'pre-line'; tipEl.innerText = lines.join('\n'); tipBox.style.display = 'block'; } else { tipBox.style.display = 'none'; }
+        }
+        // "Add to Cart" on a Google product page opens the shop here (same address) with #pin=<id>&add=1 and puts the product in the cart.
+        function autoAddFromPage_(item) {
+            try {
+                const st = getEffectivePriceStock_(item).stock;
+                if (st === 'Out of Stock' || st === 'Ask & Order') return;
+                if ((item.sizes && item.sizes.length) || (item.colors && item.colors.length)) { const m = document.getElementById('mVariantBox'); if (m && m.scrollIntoView) m.scrollIntoView({ block: 'center' }); return; }   // choose size / colour first
+                addCurrentToCart(); setTimeout(() => { try { openCart(); } catch (e) { /* the cart button still works */ } }, 350);
+            } catch (e) { /* the pop-up still opens */ }
+        }
         function renderVariantSelectors_(item) {
             const box = document.getElementById('mVariantBox');
             const sizeRow = document.getElementById('mSizeRow'), colorRow = document.getElementById('mColorRow');
             const hasSizes = item.sizes.length > 0, hasColors = item.colors.length > 0;
+            if (Array.isArray(item.variants)) item.variants.forEach(v => { variantOverrides[item.id + '|' + v.n] = { price: v.p || null, stock: v.s || null }; });   // priced options (pack size etc.) use the same price/stock override as colour/size
+            document.getElementById('mSizeLabel').textContent = item.variantLabel || 'Size';
             box.style.display = (hasSizes || hasColors) ? 'block' : 'none';
 
             sizeRow.style.display = hasSizes ? 'block' : 'none';
@@ -2530,6 +2589,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
 // ---------- Profile (lightweight, local-only) ----------
         function openProfileModal() {
             if (profile) { document.getElementById('profName').value = profile.name || ''; document.getElementById('profPhone').value = profile.phone || ''; }
+            { const pp = document.getElementById('profPin'); if (pp) pp.value = (profile && profile.pincode) || (typeof nearGet_ === 'function' ? nearGet_() : '') || ''; }
             document.getElementById('profileModal').style.display = 'flex';
         }
         function closeProfileModal() {
@@ -2540,9 +2600,12 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             const name = document.getElementById('profName').value.trim();
             const phone = document.getElementById('profPhone').value.trim();
             if (!phone) { alert('Please add a WhatsApp number so we can reach you.'); return; }
-            profile = { ...(profile || {}), name, phone }; // preserve customerId etc. from a prior checkout, if any
+            const pinEl = document.getElementById('profPin'), pin = pinEl ? pinEl.value.trim() : '';
+            if (pin && !/^[1-9]\d{5}$/.test(pin)) { alert('The pincode should be 6 digits, or leave it empty.'); return; }
+            profile = { ...(profile || {}), name, phone, pincode: pin }; // preserve customerId etc. from a prior checkout, if any
             safeLocalStorageSet_('artistryc_profile', JSON.stringify(profile));
             document.getElementById('profileModal').style.display = 'none';
+            if (pin && typeof nearFromProfile_ === 'function') nearFromProfile_(pin);
             if (pendingProfileAction) { const action = pendingProfileAction; pendingProfileAction = null; action(); }
         }
 
