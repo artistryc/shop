@@ -2827,4 +2827,113 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
 
 </div>
 
+<!-- ARTISTRYC-NOTICES-START -->
+<script>
+/* ===== Pop-up notices + store switch-off check (added 7 Nov 2026) =====
+   FEED_BASE   : the GitHub folder that holds notices.json and status.json (the platform/ folder the master already publishes).
+   VENDOR_CODE : leave '' on the MASTER shop. On a seller's shop, put that seller's vendor code (the master dashboard shows it).
+   Notices come from the master's "Notices" tab. If the seller is suspended, this shop shows a "temporarily unavailable" screen.
+   Both checks fail open: if GitHub cannot be reached, the shop works normally and no pop-up appears. */
+(function () {
+  var FEED_BASE = 'https://raw.githubusercontent.com/artistryc/shop/main/platform/';
+  var VENDOR_CODE = '';
+  var CONTACT_URL = '';   /* optional https link (for example your WhatsApp link) shown on the unavailable screen */
+  var FIRST_DELAY_MS = 4000, CHECK_MS = 2000, MAX_PER_VISIT = 2;
+  var doc = document, win = window;
+  var code = (VENDOR_CODE && !/PASTE|HERE/i.test(VENDOR_CODE) && /^[A-Za-z0-9_-]{1,40}$/.test(VENDOR_CODE)) ? VENDOR_CODE.toLowerCase() : '';
+  var me = code || 'master';
+  function store(kind, k, v) { try { var s = win[kind]; if (v === undefined) return s.getItem(k); s.setItem(k, v); } catch (e) { /* storage blocked */ } return null; }
+  function getJson(name) {
+    return fetch(FEED_BASE + name + '?t=' + Math.floor(Date.now() / 3600000), { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error(name); return r.json(); });
+  }
+  function el(tag, css, text) { var n = doc.createElement(tag); if (css) n.style.cssText = css; if (text) n.textContent = text; return n; }
+  function https(u) { return /^https:\/\//i.test(String(u || '')) ? String(u) : ''; }
+  function ga(name, n) { try { if (typeof gtag === 'function') gtag('event', name, { notice_id: n.id, vendor_name: code || 'master' }); } catch (e) { /* analytics may be blocked */ } }
+
+  /* ---- 1. switch-off check ---- */
+  var blocked = false;
+  function block() {
+    if (blocked) return; blocked = true; win.__STORE_BLOCKED = true;
+    var box = el('div', 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483600;background:#fff;color:#111;display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui,sans-serif;text-align:center');
+    var in1 = el('div', 'max-width:460px');
+    in1.appendChild(el('h1', 'font-size:22px;font-weight:800;margin:8px 0', 'This store is temporarily unavailable'));
+    in1.appendChild(el('p', 'font-size:15px;line-height:1.5;color:#444;margin:0 0 16px', 'Please check back later.'));
+    if (https(CONTACT_URL)) { var a = el('a', 'display:inline-block;background:#000;color:#fff;border-radius:999px;padding:12px 26px;font-weight:800;text-decoration:none', 'Contact us'); a.href = https(CONTACT_URL); a.rel = 'noopener noreferrer'; in1.appendChild(a); }
+    box.appendChild(in1); (doc.body || doc.documentElement).appendChild(box);
+    doc.documentElement.style.overflow = 'hidden';
+    var pop = doc.getElementById('acn-wrap'); if (pop && pop.parentNode) pop.parentNode.removeChild(pop);
+  }
+  if (code) getJson('status.json').then(function (s) {
+    var vs = (s && s.vendors) || {};
+    Object.keys(vs).forEach(function (k) { if (k.toLowerCase() === code && vs[k] && vs[k].status === 'suspended') block(); });
+  }).catch(function () { /* fail open */ });
+
+  /* ---- 2. pop-up notices ---- */
+  var list = [], shown = 0, open = false;
+  function ctx() {
+    var c = 'all', t = 'all';
+    try { if (typeof activeCategory !== 'undefined') c = String(activeCategory).toLowerCase(); } catch (e) { /* not on this page */ }
+    try { if (typeof activeTag !== 'undefined') t = String(activeTag).toLowerCase(); } catch (e) { /* not on this page */ }
+    return { c: c, t: t };
+  }
+  function lc(a) { return (a || []).map(function (x) { return String(x).trim().toLowerCase(); }).filter(Boolean); }
+  function eligible(n) {
+    var on = lc(n.on); if (!on.length) on = ['all'];
+    if (on.indexOf('all') < 0 && on.indexOf(me) < 0) return false;
+    var today = new Date().toISOString().slice(0, 10);
+    if (n.start && today < n.start) return false;
+    if (n.end && today > n.end) return false;
+    var x = ctx(), cats = lc(n.cats), tags = lc(n.tags);
+    if (cats.length && cats.indexOf(x.c) < 0) return false;
+    if (tags.length && tags.indexOf(x.t) < 0) return false;
+    var key = 'acn_' + n.id, rep = n.rep || 'once', last = +store('localStorage', key) || 0;
+    if (rep === 'always') return !store('sessionStorage', key);
+    if (rep === 'daily') return Date.now() - last > 864e5;
+    return !last;
+  }
+  function css() {
+    if (doc.getElementById('acn-css')) return;
+    var s = doc.createElement('style'); s.id = 'acn-css';
+    s.textContent = '#acn-wrap{position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;font-family:system-ui,sans-serif}' +
+      '#acn-box{background:#fff;color:#111;border-radius:18px;max-width:420px;width:100%;max-height:90vh;overflow:auto;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.4)}' +
+      '#acn-box img{display:block;width:100%;max-height:260px;object-fit:cover;border-radius:18px 18px 0 0}' +
+      '#acn-body{padding:18px 20px 22px}#acn-body h2{margin:0 0 6px;font-size:20px;font-weight:800;line-height:1.2}#acn-body p{margin:0 0 16px;font-size:15px;line-height:1.5;color:#333;white-space:pre-line}' +
+      '#acn-cta{display:inline-block;background:#000;color:#fff;border-radius:999px;padding:12px 26px;font-weight:800;text-decoration:none}' +
+      '#acn-x{position:absolute;top:8px;right:8px;width:36px;height:36px;border:0;border-radius:50%;background:rgba(255,255,255,.92);color:#111;font-size:22px;line-height:36px;cursor:pointer}';
+    (doc.head || doc.documentElement).appendChild(s);
+  }
+  function show(n) {
+    if (blocked || open) return; open = true; shown++;
+    store('localStorage', 'acn_' + n.id, String(Date.now())); store('sessionStorage', 'acn_' + n.id, '1');
+    css();
+    var prev = doc.activeElement;
+    var wrap = el('div'); wrap.id = 'acn-wrap'; wrap.setAttribute('role', 'dialog'); wrap.setAttribute('aria-modal', 'true'); wrap.setAttribute('aria-label', n.title || 'Notice');
+    var box = el('div'); box.id = 'acn-box';
+    var x = el('button', '', '\u00d7'); x.id = 'acn-x'; x.type = 'button'; x.setAttribute('aria-label', 'Close');
+    if (https(n.img)) { var im = el('img'); im.src = https(n.img); im.alt = ''; im.loading = 'lazy'; box.appendChild(im); }
+    var body = el('div'); body.id = 'acn-body';
+    if (n.title) body.appendChild(el('h2', '', n.title));
+    if (n.text) body.appendChild(el('p', '', n.text));
+    if (https(n.link) && n.btn) { var a = el('a', '', n.btn); a.id = 'acn-cta'; a.href = https(n.link); a.target = '_blank'; a.rel = 'noopener noreferrer'; a.addEventListener('click', function () { ga('popup_click', n); close(); }); body.appendChild(a); }
+    box.appendChild(x); box.appendChild(body); wrap.appendChild(box); (doc.body || doc.documentElement).appendChild(wrap);
+    function close() { open = false; doc.removeEventListener('keydown', key, true); if (wrap.parentNode) wrap.parentNode.removeChild(wrap); try { if (prev && prev.focus) prev.focus(); } catch (e) { /* gone */ } }
+    function key(e) { if (e.key === 'Escape') close(); }
+    x.addEventListener('click', close); wrap.addEventListener('click', function (e) { if (e.target === wrap) close(); }); doc.addEventListener('keydown', key, true);
+    try { x.focus(); } catch (e) { /* ignore */ }
+    ga('popup_view', n);
+  }
+  function tick() {
+    if (blocked || open || shown >= MAX_PER_VISIT || doc.hidden) return;
+    for (var i = 0; i < list.length; i++) if (eligible(list[i])) { show(list[i]); return; }
+  }
+  getJson('notices.json').then(function (j) {
+    list = ((j && j.notices) || []).filter(function (n) { return n && n.id && (n.title || n.text); }).slice(0, 50);
+    if (!list.length) return;
+    setTimeout(function () { tick(); setInterval(tick, CHECK_MS); }, FIRST_DELAY_MS);
+  }).catch(function () { /* no notices or offline: nothing to show */ });
+})();
+</script>
+<!-- ARTISTRYC-NOTICES-END -->
+
 </html>
