@@ -269,7 +269,7 @@ h1{font-size:22px;line-height:1.25;margin:0 0 8px}h2{font-size:15px;text-transfo
 .prod{display:grid;gap:20px}@media(min-width:760px){.prod{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}}
 .ph{aspect-ratio:3/4;background:#f2f2f2;border-radius:14px;overflow:hidden;width:100%;max-width:560px}.ph img{width:100%;height:100%;object-fit:contain;display:block}
 .thumbs{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}.thumbs .t{width:72px;aspect-ratio:3/4;background:#f2f2f2;border-radius:8px;overflow:hidden}.thumbs img{width:100%;height:100%;object-fit:cover;display:block}
-.price{font-size:26px;font-weight:900;margin:6px 0}.muted{color:#666;font-size:14px}.btns{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+.price{font-size:26px;font-weight:900;margin:6px 0}.muted{color:#666;font-size:14px}.btns{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.pdesc{margin:14px 0}.pdesc p{margin:0 0 10px;line-height:1.6}.pdesc a{color:inherit;text-decoration:underline;word-break:break-all}
 .btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 22px;border-radius:999px;font-weight:800;text-decoration:none;font-size:15px}
 .btn.wa{background:#25d366;color:#fff}.btn.alt{background:var(--b);color:var(--bi)}.tips{margin:4px 0 0;padding-left:20px;font-size:14px;color:#333}h3{font-size:14px;margin:16px 0 6px}.tags{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 0;padding:0;list-style:none}.tags li{font-size:12px;border:1px solid #ddd;border-radius:999px;padding:3px 10px;color:#444}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}@media(min-width:700px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}@media(min-width:1000px){.grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
@@ -337,6 +337,11 @@ function filterChips(current) {
   const all = [...cats.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 24);
   return '<ul class="fchips" aria-label="Filter by category"><li><a href="' + esc(cfg.siteUrl) + '/' + LP + '/">All</a></li>' + all.map(([c, l]) => `<li><a class="${c === current ? 'on' : ''}" href="${esc(catUrl(c, 1))}">${esc(c)} (${l.length})</a></li>`).join('') + '</ul>';
 }
+// The seller's own description, kept as they wrote it: line breaks become paragraphs and web links become real links.
+function richText(s) {
+  const linkify = x => esc(x).replace(/https:\/\/[^\s<]+/g, u => { const clean = u.replace(/[.,;:!?)]+$/, ''), tail = u.slice(clean.length); return '<a href="' + clean + '" rel="nofollow noopener ugc" target="_blank">' + clean + '</a>' + tail; });
+  return String(s || '').replace(/\r/g, '').split(/\n{2,}/).map(b => b.trim()).filter(Boolean).map(b => '<p>' + b.split('\n').map(l => linkify(l.trim())).join('<br>') + '</p>').join('');
+}
 function productPage(it) {
   const title = cleanTitle(it.title), url = urlOf(it), cat = it.category || 'Other';
   const priced = Number(it.price) > 0, avail = availabilityOf(it);
@@ -380,8 +385,8 @@ function productPage(it) {
   const inf = infoOf(it);
   if (inf.colors.length) h += `<p class="muted">Colours: ${esc(inf.colors.join(', '))}</p>`;
   if (sizes.length) h += `<p class="muted">Sizes: ${esc(sizes.join(', '))}</p>`;
+  h += String(it.desc || '').trim() ? '<div class="pdesc">' + richText(it.desc) + '</div>' : `<p>${esc(desc)}</p>`;
   h += `<div class="btns"><a class="btn wa" href="${esc(wa)}" rel="nofollow noopener">Order on WhatsApp</a><a class="btn alt" href="${esc('/#pin=' + encodeURIComponent(it.id) + '&add=1')}" rel="nofollow">Add to Cart</a></div>`;
-  h += `<p>${esc(desc)}</p>`;
   if (tags.length) h += '<ul class="tags">' + tags.map(t => `<li>${esc(t)}</li>`).join('') + '</ul>';
   if (Array.isArray(it.variants) && it.variants.length) h += '<h3>' + esc(it.variantLabel || 'Options') + '</h3><ul class="tips">' + it.variants.map(v => `<li><b>${esc(v.n)}</b>${Number(v.p) > 0 ? ': &#8377;' + Number(v.p).toLocaleString('en-IN') : ''}${v.s === 'Out of Stock' ? ' (out of stock)' : ''}</li>`).join('') + '</ul>';
   if (Array.isArray(it.extra) && it.extra.length) h += '<h3>Details</h3><ul class="tips">' + it.extra.slice(0, 12).map(x => `<li><b>${esc(x.l)}:</b> ${esc(x.v)}</li>`).join('') + '</ul>';
