@@ -291,7 +291,7 @@ gtag('config', 'G-4QRB1X9WMF');
     .pin-grid:has(.pin-card.visible) + #loading-sentinel { visibility: visible; }
     .collections-nav { content-visibility: auto; contain-intrinsic-size: auto 240px; }
     </style>
-</head>
+<style>.line-clamp-3{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}#mVendorLogo{min-width:24px}</style></head>
 <body>
 <div class="bg-white text-black">
 
@@ -302,7 +302,7 @@ gtag('config', 'G-4QRB1X9WMF');
                  scrolls out of view, regardless of screen size. -->
             <div class="modal-header">
                 <div class="flex items-center gap-2">
-                    <div class="w-5 h-5 bg-black rounded-full"></div>
+                    <div id="mVendorLogo" class="w-6 h-6 bg-black rounded-full overflow-hidden flex-shrink-0"></div>
                     <span id="mVendor" class="font-bold text-gray-400 text-sm uppercase tracking-tighter">ArtistryC Selection</span>
                 </div>
                 <div class="pin-nav" role="group" aria-label="Browse pins">
@@ -405,8 +405,13 @@ gtag('config', 'G-4QRB1X9WMF');
             <p class="text-xs text-gray-400 mb-4">Saved on this device only — used to speed up checkout and order updates. No password needed.</p>
             <input id="profName" placeholder="Name" class="w-full bg-gray-100 rounded-xl px-4 py-3 mb-3 text-base">
             <input id="profPhone" placeholder="WhatsApp number" class="w-full bg-gray-100 rounded-xl px-4 py-3 mb-1 text-base">
-            <input id="profPin" inputmode="numeric" maxlength="6" placeholder="Pincode (optional): to see stores near you" class="w-full bg-gray-100 rounded-xl px-4 py-3 mb-4 text-base">
+            <input id="profLine1" placeholder="Delivery address: house no, street, area" class="w-full bg-gray-100 rounded-xl px-4 py-3 mb-3 text-base" autocomplete="street-address">
+            <div class="flex gap-2 mb-3"><input id="profCity" placeholder="City" class="w-1/2 bg-gray-100 rounded-xl px-4 py-3 text-base" autocomplete="address-level2"><input id="profState" placeholder="State" class="w-1/2 bg-gray-100 rounded-xl px-4 py-3 text-base" autocomplete="address-level1"></div>
+            <input id="profPin" inputmode="numeric" maxlength="6" placeholder="Pincode (needed to order; also shows stores near you)" class="w-full bg-gray-100 rounded-xl px-4 py-3 mb-2 text-base" autocomplete="postal-code">
+            <p id="profNeed" class="text-xs font-bold text-red-600 mb-2" style="display:none"></p>
             <button onclick="saveProfile()" class="w-full bg-black text-white py-3 rounded-xl font-bold">Save</button>
+            <button onclick="clearProfile_()" class="w-full mt-2 text-xs text-gray-400 underline">Remove my details from this device</button>
+            <div id="profActivity"></div>
         </div>
     </div>
 
@@ -587,7 +592,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
         const ASK_AND_ORDER_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwa2ZmIIssAeupINr2X2Fyo55ZuFXtLJWXPYZdo0CBKLDibHL69TNewfWIdtXXCREf3/exec';
         let MASTER_WHATSAPP_NUMBER = '919619659727'; // fallback default; overwritten from the sheet's Settings tab on load
         const ADS_ENABLED = true;
-        const AD_EVERY_N_CARDS = 20;
+        const AD_EVERY_N_CARDS = 8;
         const AD_SLOT_ID = '2319563614';
         // In-feed ads need BOTH of these from the SAME ad unit — AdSense generates
         // this layout key specifically for the unit you create (Ads → By ad unit →
@@ -786,8 +791,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             if (d && typeof d === 'object') ['desc', 'additionalImages', 'shopperTip', 'externalLink'].forEach(k => { if (d[k] !== undefined) item[k] = d[k]; });
         }
         async function openModalWhenDetails_(item, id) {
-            try { await Promise.race([loadDetails_(item), new Promise(r => setTimeout(r, 2500))]); } catch (e) { /* show what we have */ }
-            item._full = true; openModal(id);
+            const pend = loadDetails_(item).catch(() => {}); try { await Promise.race([pend, new Promise(r => setTimeout(r, 2500))]); } catch (e) { /* show what we have */ } item._full = true; openModal(id); pend.then(() => { if (currentItem === item && item.desc) { const el = document.getElementById('mDesc'), b = document.getElementById('readMoreBtn'); if (el && el.innerText !== item.desc) { el.innerText = item.desc; if (b) b.style.display = el.scrollHeight > el.clientHeight + 2 ? 'flex' : 'none'; } } });
         }
         async function loadCatalog_() {
             const sources = [
@@ -816,7 +820,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             if (!d || typeof d !== 'object') return false;
             const b = d.brand || {}, HEX = /^#[0-9a-fA-F]{6}$/;
             const p = HEX.test(b.primary || '') ? b.primary : '', a = HEX.test(b.accent || '') ? b.accent : '';
-            const logo = /^https:\/\//.test(d.logoUrl || '') ? d.logoUrl : '', name = String(d.name || '').trim().slice(0, 60);
+            const logo = /^https:\/\//.test(d.logoUrl || '') ? d.logoUrl : '', name = String(d.name || '').trim().slice(0, 60); if (logo) window.__brandLogo = logo;
             if (!p && !a && !logo && !name) return false;
             const node = document.getElementById('brandName');
             if (node) {
@@ -1049,7 +1053,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             if (pages_.length) {
                 const btn = document.createElement('button'); btn.id = 'helpBtn'; btn.type = 'button'; btn.title = 'Help & policies'; btn.setAttribute('aria-label', 'Help and policies'); btn.className = 'p-2 rounded-full bg-gray-100';
                 btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.5 9.5a2.5 2.5 0 114 2c-.8.6-1.5 1-1.5 2M12 17h.01"/></svg>';
-                const anchor = document.querySelector('[onclick="openProfileModal()"]');
+                const anchor = document.querySelector('[onclick="openCart()"]') || document.querySelector('[onclick="openProfileModal()"]');
                 if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(btn, anchor); else { const nav = document.querySelector('nav'); if (nav) nav.appendChild(btn); }
                 btn.onclick = ev => {
                     ev.stopPropagation(); const old = document.getElementById('helpMenu'); if (old) { old.remove(); return; }
@@ -1880,6 +1884,25 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             modalOpenedViaPush = true;
             openModal(id);
         }
+        function loadVendorLogos_() {
+            if (window.__vendorLogos) return Promise.resolve(window.__vendorLogos);
+            window.__vendorLogos = {};
+            if (typeof STORES_URL === 'undefined' || !STORES_URL) return Promise.resolve(window.__vendorLogos);
+            const add = d => (Array.isArray(d) ? d : []).forEach(v => { if (v && /^https:\/\//.test(v.logoUrl || '') && v.vendorName) window.__vendorLogos[String(v.vendorName).trim().toLowerCase()] = v.logoUrl; });
+            return Promise.all([STORES_URL.replace(/stores\.json$/, 'directory.json'), STORES_URL].map(u => fetch(u).then(r => r.ok ? r.json() : []).then(add).catch(() => {}))).then(() => window.__vendorLogos);
+        }
+        function setModalVendorLogo_(item) {
+            const box = document.getElementById('mVendorLogo') || document.getElementById('mDot'); if (!box) return; box.style.width = '28px'; box.style.height = '28px'; box.style.overflow = 'hidden'; box.style.borderRadius = '999px';
+            const name = String(item.vendor || '').trim(), key = name.toLowerCase();
+            const pick = () => { const m = window.__vendorLogos || {}; return m[key] || (Object.keys(m).length ? '' : (window.__brandLogo || '')); };
+            const paint = url => {
+                box.textContent = '';
+                if (url) { const im = new Image(); im.alt = ''; im.decoding = 'async'; im.referrerPolicy = 'no-referrer'; im.style.cssText = 'width:100%;height:100%;object-fit:cover;background:#fff'; im.onerror = () => paint(''); im.src = url; box.appendChild(im); }
+                else { box.style.display = 'flex'; box.style.alignItems = 'center'; box.style.justifyContent = 'center'; const s = document.createElement('span'); s.style.cssText = 'color:#fff;font-size:11px;font-weight:800;line-height:1'; s.textContent = (name[0] || 'A').toUpperCase(); box.appendChild(s); }
+            };
+            paint(pick());
+            loadVendorLogos_().then(() => { if (currentItem === item) paint(pick()); });
+        }
         function openModal(id) {
             const item = allData.find(i => i.id === id);
             if (!item) return;
@@ -1890,15 +1913,14 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             currentImageIndex = 0;
 
             setModalMedia_(item);
-            document.getElementById('mVendor').innerText = item.vendor;
+            document.getElementById('mVendor').innerText = item.vendor; setModalVendorLogo_(item);
             document.getElementById('mTitle').innerText = item.title;
 
             const descEl = document.getElementById('mDesc'), btnEl = document.getElementById('readMoreBtn'), descBox = document.getElementById('mDescBox');
             const hasDesc = item.desc && item.desc.trim().length > 0;
             descBox.style.display = hasDesc ? 'block' : 'none'; // was always visible even with nothing inside — an empty gray box
             if (hasDesc) {
-                descEl.innerText = item.desc; descEl.classList.add('line-clamp-1');
-                btnEl.innerHTML = 'Read more <span>↓</span>'; btnEl.style.display = item.desc.length > 40 ? 'flex' : 'none';
+                descEl.innerText = item.desc; descEl.style.whiteSpace = 'pre-line'; descEl.classList.add('line-clamp-3'); btnEl.innerHTML = 'Show more <span>\u25be</span>'; btnEl.style.display = 'none'; requestAnimationFrame(() => { btnEl.style.display = descEl.scrollHeight > descEl.clientHeight + 2 ? 'flex' : 'none'; });
             }
 
             renderInfo_(item);
@@ -2147,10 +2169,11 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
         // If no profile is saved yet, opens the profile modal and holds the
         // intended action until Save is clicked — no more native browser
         // prompt(), and nothing proceeds anonymously anymore.
-        let pendingProfileAction = null;
+        let pendingProfileAction = null; let pendingNeedAddress = false;
         function requireProfile_(action) {
-            if (profile && profile.phone) { action(); return; }
-            pendingProfileAction = action;
+            const needAddr = !!window.__needAddr; window.__needAddr = false;
+            if (profile && profile.phone && (!needAddr || hasAddress_(profile))) { action(); return; }
+            pendingProfileAction = action; pendingNeedAddress = needAddr;
             openProfileModal();
         }
 
@@ -2174,7 +2197,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             lastWaSend_ = { key: key || '', at: Date.now(), url: url };
             if (tab && !tab.closed) tab.location.href = url; else window.location.href = url;
         }
-        function openWhatsAppNow_(url, key, logP) {
+        function openWhatsAppNow_(url, key, logP) { recordActivity_(arguments[1], arguments[0]);
             // Open WhatsApp in the same tick as the tap — no waiting on the sheet. Logging carries on in the background.
             lastWaSend_ = { key: key || '', at: Date.now(), url: url };
             const w = window.open(url, '_blank');
@@ -2273,7 +2296,8 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
                 alert("Sent — you'll hear back once the vendor confirms availability.");
             });
         }
-        function orderNowViaWhatsApp() {
+        function orderNowViaWhatsApp() { window.__needAddr = true; orderNowViaWhatsApp_(); }
+        function orderNowViaWhatsApp_() {
             if (!currentItem) return;
             requireProfile_(() => {
                 const item = currentItem;
@@ -2286,7 +2310,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
                 const logP = fetch(CONFIG_WEBAPP_URL, { method: "POST", body: JSON.stringify({
                             type: 'checkout',
                             items: [{ id: item.id, title: item.title, variant, price, vendor: item.vendor, link: pinLink, externalLink: item.externalLink || '', qty: 1 }],
-                            customerName: profile.name || '', customerPhone: profile.phone
+                            customerName: profile.name || '', customerPhone: profile.phone, customerAddress: addressString_(profile)
                         }) }).then(r => r.json()).catch(() => null);
                 gtag('event', 'begin_checkout', { currency: 'INR', value: price || 0,
                     items: [{ item_id: item.id, item_name: item.title, item_brand: item.vendor, item_variant: variant, price: price || 0, quantity: 1 }] });
@@ -2294,14 +2318,14 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
                 msg += `${item.title}${variant ? ' (' + variant + ')' : ''} (${item.vendor}) — ₹${(price || 0).toLocaleString('en-IN')}\n`;
                 msg += `Listing: ${pinLink}\n`;
                 if (item.externalLink) msg += `Original: ${item.externalLink}\n`;
-                msg += `\nFrom: ${profile.name || 'Customer'} (${profile.phone})`;
+                msg += `\nFrom: ${profile.name || 'Customer'} (${profile.phone})${addrLine_()}`;
                 openWhatsAppNow_(`https://wa.me/${MASTER_WHATSAPP_NUMBER}?text=${encodeURIComponent(msg)}`, waKey, logP);
             });
         }
         function toggleReadMore() {
             const descEl = document.getElementById('mDesc'), btnEl = document.getElementById('readMoreBtn');
-            if (descEl.classList.contains('line-clamp-1')) { descEl.classList.remove('line-clamp-1'); btnEl.innerHTML = 'Show less <span>↑</span>'; }
-            else { descEl.classList.add('line-clamp-1'); btnEl.innerHTML = 'Read more <span>↓</span>'; }
+            if (descEl.classList.contains('line-clamp-3')) { descEl.classList.remove('line-clamp-3'); btnEl.innerHTML = 'Show less <span>↑</span>'; }
+            else { descEl.classList.add('line-clamp-3'); btnEl.innerHTML = 'Show more <span>↓</span>'; }
         }
 
         function shareProduct() {
@@ -2563,13 +2587,14 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             const msg = `Hi, I need some help with ${SITE_NAME}.`;
             window.open(`https://wa.me/${MASTER_WHATSAPP_NUMBER}?text=${encodeURIComponent(msg)}`, '_blank');
         }
-        function checkoutViaWhatsApp() {
+        function checkoutViaWhatsApp() { window.__needAddr = true; checkoutViaWhatsApp_(); }
+        function checkoutViaWhatsApp_() {
             if (!cart.length) return;
             requireProfile_(() => {
                 const total = cart.reduce((s, c) => s + c.price * c.qty, 0);
                 const waKey = 'cart|' + cart.map(c => c.cartKey + 'x' + c.qty).join(',');
                 if (reopenRecentWhatsApp_(waKey)) return;
-                const logP = fetch(CONFIG_WEBAPP_URL, { method: "POST", body: JSON.stringify({ type: 'checkout', items: cart, customerName: profile.name || '', customerPhone: profile.phone }) }).then(r => r.json()).catch(() => null);
+                const logP = fetch(CONFIG_WEBAPP_URL, { method: "POST", body: JSON.stringify({ type: 'checkout', items: cart, customerName: profile.name || '', customerPhone: profile.phone, customerAddress: addressString_(profile) }) }).then(r => r.json()).catch(() => null);
                 logP.then(data => { if (data && data.ok) { if (data.customerId) { profile = { ...(profile || {}), customerId: data.customerId }; safeLocalStorageSet_('artistryc_profile', JSON.stringify(profile)); } } });
                 let msg = `Hi, I'd like to order:\n\n`;
                 cart.forEach(c => {
@@ -2577,7 +2602,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
                     if (c.externalLink) msg += `  Original: ${c.externalLink}\n`;
                 });
                 msg += `\nTotal: ₹${total.toLocaleString('en-IN')}`;
-                msg += `\n\nFrom: ${profile.name || 'Customer'} (${profile.phone})`;
+                msg += `\n\nFrom: ${profile.name || 'Customer'} (${profile.phone})${addrLine_()}`;
                 gtag('event', 'begin_checkout', { currency: 'INR', value: total,
                     items: cart.map(c => ({ item_id: c.id, item_name: c.title, item_brand: c.vendor, item_variant: c.variant, price: c.price, quantity: c.qty })) });
                 openWhatsAppNow_(`https://wa.me/${MASTER_WHATSAPP_NUMBER}?text=${encodeURIComponent(msg)}`, waKey, logP);
@@ -2588,13 +2613,14 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
         }
 // ---------- Profile (lightweight, local-only) ----------
         function openProfileModal() {
+            fillProfileExtra_();
             if (profile) { document.getElementById('profName').value = profile.name || ''; document.getElementById('profPhone').value = profile.phone || ''; }
             { const pp = document.getElementById('profPin'); if (pp) pp.value = (profile && profile.pincode) || (typeof nearGet_ === 'function' ? nearGet_() : '') || ''; }
             document.getElementById('profileModal').style.display = 'flex';
         }
         function closeProfileModal() {
             document.getElementById('profileModal').style.display = 'none';
-            pendingProfileAction = null; // cancelling the popup cancels whatever was waiting on it too
+            pendingProfileAction = null; pendingNeedAddress = false; // cancelling the popup cancels whatever was waiting on it too
         }
         function saveProfile() {
             const name = document.getElementById('profName').value.trim();
@@ -2602,11 +2628,57 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             if (!phone) { alert('Please add a WhatsApp number so we can reach you.'); return; }
             const pinEl = document.getElementById('profPin'), pin = pinEl ? pinEl.value.trim() : '';
             if (pin && !/^[1-9]\d{5}$/.test(pin)) { alert('The pincode should be 6 digits, or leave it empty.'); return; }
-            profile = { ...(profile || {}), name, phone, pincode: pin }; // preserve customerId etc. from a prior checkout, if any
+            const addr = readAddress_();
+            if ((pendingNeedAddress || addr.any) && !addr.ok) { const need = document.getElementById('profNeed'); if (need) { need.style.display = 'block'; need.textContent = 'Please fill the full address: house and street, city, state and a 6-digit pincode.'; } return; }
+            profile = { ...(profile || {}), name, phone, pincode: pin, line1: addr.line1, city: addr.city, state: addr.state }; pendingNeedAddress = false; // preserve customerId etc. from a prior checkout, if any
             safeLocalStorageSet_('artistryc_profile', JSON.stringify(profile));
             document.getElementById('profileModal').style.display = 'none';
             if (pin && typeof nearFromProfile_ === 'function') nearFromProfile_(pin);
             if (pendingProfileAction) { const action = pendingProfileAction; pendingProfileAction = null; action(); }
+        }
+
+        // ---------- Delivery address, saved on this device, plus a private list of what this device asked for ----------
+        function hasAddress_(p) { return !!(p && p.line1 && p.city && p.state && /^[1-9]\d{5}$/.test(p.pincode || '')); }
+        function addressString_(p) { return hasAddress_(p) ? [p.line1, p.city, p.state].join(', ') + ' - ' + p.pincode : ''; }
+        function addrLine_() { const a = addressString_(profile); return a ? '\nDeliver to: ' + a : ''; }
+        function readAddress_() {
+            const v = id => { const e = document.getElementById(id); return e ? e.value.trim() : ''; };
+            const a = { line1: v('profLine1'), city: v('profCity'), state: v('profState'), pincode: v('profPin') };
+            a.any = !!(a.line1 || a.city || a.state); a.ok = !!(a.line1 && a.city && a.state && /^[1-9]\d{5}$/.test(a.pincode));
+            return a;
+        }
+        function fillProfileExtra_() {
+            const set = (id, val) => { const e = document.getElementById(id); if (e) e.value = val || ''; };
+            set('profLine1', profile && profile.line1); set('profCity', profile && profile.city); set('profState', profile && profile.state);
+            const need = document.getElementById('profNeed');
+            if (need) { need.style.display = pendingNeedAddress ? 'block' : 'none'; need.textContent = pendingNeedAddress ? 'To order, please add your full delivery address (house and street, city, state, pincode).' : ''; }
+            renderActivity_();
+        }
+        function recordActivity_(waKey, url) {
+            try {
+                const kind = String(waKey || '').split('|')[0], label = kind === 'order' ? 'Order' : kind === 'cart' ? 'Cart order' : 'Ask';
+                let text = ''; const i = String(url || '').indexOf('text='); if (i >= 0) text = decodeURIComponent(url.slice(i + 5));
+                const list = JSON.parse(safeLocalStorageGet_('artistryc_activity') || '[]');
+                list.unshift({ type: label, text: text.slice(0, 400), at: Date.now() });
+                safeLocalStorageSet_('artistryc_activity', JSON.stringify(list.slice(0, 30)));
+            } catch (e) { /* history is a convenience only */ }
+        }
+        function renderActivity_() {
+            const box = document.getElementById('profActivity'); if (!box) return;
+            let list = []; try { list = JSON.parse(safeLocalStorageGet_('artistryc_activity') || '[]'); } catch (e) { list = []; }
+            box.textContent = '';
+            if (!list.length) return;
+            const h = document.createElement('div'); h.className = 'text-xs font-bold text-gray-500 mt-4 mb-1'; h.textContent = 'Your recent requests on this device'; box.appendChild(h);
+            list.slice(0, 8).forEach(a => {
+                const d = document.createElement('div'); d.className = 'text-xs text-gray-700 border-t border-gray-100 py-2'; d.style.whiteSpace = 'pre-line';
+                const t = document.createElement('b'); t.textContent = a.type + ' \u00b7 ' + new Date(a.at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); d.appendChild(t);
+                const first = String(a.text || '').split('\n').filter(x => x && !/^Hi,/.test(x)).slice(0, 2).join('\n'); d.appendChild(document.createTextNode('\n' + first)); box.appendChild(d);
+            });
+        }
+        function clearProfile_() {
+            if (!confirm('Remove your saved name, number, address and request list from this device?')) return;
+            profile = null; ['artistryc_profile', 'artistryc_activity'].forEach(k => { try { localStorage.removeItem(k); } catch (e) { /* blocked */ } });
+            ['profName', 'profPhone', 'profLine1', 'profCity', 'profState', 'profPin'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; }); renderActivity_();
         }
 
         // ---------- Search ----------
