@@ -9,8 +9,9 @@ on:
   schedule:
     - cron: '30 19 * * *'            # every night at 01:00 India time. If nothing is new it stops in about 15 seconds (about 1 minute used).
 
+# Read-only by default. Only the job that saves the result (merge) is allowed to write.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: enrich
@@ -77,6 +78,8 @@ jobs:
 
   merge:
     needs: [plan, analyse]
+    permissions:
+      contents: write
     if: always() && needs.plan.outputs.count != '0' && needs.analyse.result != 'cancelled' && needs.analyse.result != 'skipped'
     runs-on: ubuntu-latest
     timeout-minutes: 10
