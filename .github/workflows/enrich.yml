@@ -71,7 +71,7 @@ jobs:
         run: |
           P=products.json; [ -f "$P" ] || P=platform/products.json
           python enrich/enrich.py --products "$P" --existing data/enrichment.json --out "part-${{ matrix.shard }}.json" --shard ${{ matrix.shard }} --of ${{ needs.plan.outputs.of }} --limit ${{ inputs.limit || 0 }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: part-${{ matrix.shard }}
           path: part-${{ matrix.shard }}.json
