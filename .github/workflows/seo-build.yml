@@ -52,7 +52,7 @@ jobs:
             console.log(note); fs.appendFileSync(process.env.GITHUB_OUTPUT, 'stale=' + stale + '\n');
             if (stale) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '\nWARNING: ' + note + '. The Google Sheet job that publishes your feeds may have stopped.\n');
           "
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
