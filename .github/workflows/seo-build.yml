@@ -66,7 +66,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   alert:                              # opens an issue (GitHub emails you) when the build breaks or the feed has gone stale
     needs: [build, deploy]
