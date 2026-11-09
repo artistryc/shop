@@ -215,6 +215,25 @@ gtag('config', 'G-4QRB1X9WMF');
     .zoom-container:not(.video-mode) .media-wrap { margin:auto; flex:0 0 auto; }
     .zoom-container:not(.video-mode) .modal-image { max-width:none; max-height:none; object-fit:fill; -webkit-user-drag:none; user-select:none; }
     .zoom-container.video-mode { height:auto !important; min-height:0 !important; overflow:hidden; }
+
+    /* ===== Video + description fixes (8 Nov 2026) =====
+       The video frame now keeps its real shape inside the picture box (it used to collapse to 150px high on desktop, or run past the bottom of the box
+       for a vertical reel), it is centred on black, and an Instagram embed can scroll inside the box. */
+    .line-clamp-3{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+    .zoom-container.video-mode{background:#000}
+    .zoom-container.video-mode #mMedia{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:0}
+    .zoom-container.video-mode .video-wrap{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+    .zoom-container.video-mode .video-frame{border-radius:0;flex:0 0 auto;max-width:100%}
+    .zoom-container.video-mode .video-frame.landscape{width:100%;height:auto;aspect-ratio:16/9;max-height:100%}
+    .zoom-container.video-mode .video-frame.portrait{width:auto;height:100%;aspect-ratio:9/16;max-height:100%}
+    .zoom-container.video-mode .video-frame iframe,.zoom-container.video-mode .video-frame video{width:100%;height:100%;border:0;display:block;background:#000}
+    .zoom-container.video-mode.video-ig{overflow:auto;background:#fff}
+    .zoom-container.video-mode.video-ig #mMedia,.zoom-container.video-mode.video-ig .video-wrap{display:block;height:auto}
+    .video-open-link{display:block;text-align:center;padding:14px;font-weight:700;font-size:13px;color:#fff;text-decoration:underline}
+    @media (max-width:767px){
+      .zoom-container.video-mode #mMedia,.zoom-container.video-mode .video-wrap{height:auto}
+      .zoom-container.video-mode .video-frame.portrait{height:min(72vh,640px);height:min(72dvh,640px)}
+    }
     @media (min-width:768px){ .zoom-container { position:absolute; inset:0; width:auto; height:auto; } }
     @media (max-width:767px){ .zoom-container:not(.video-mode):not(.laid) { min-height:220px; } }
     /* Mobile stacks image above details inside one scrolling body: neither block may shrink, or the fixed-height image box would overlap the details. */
@@ -338,7 +357,7 @@ gtag('config', 'G-4QRB1X9WMF');
                     <p id="mPrice" class="text-2xl md:text-3xl font-black text-black mb-2"></p>
                     <p id="mStock" class="text-xs font-bold mb-4"></p>
                     <div id="mDescBox" class="bg-gray-50 p-4 rounded-2xl mb-6 relative border border-gray-200">
-                        <p id="mDesc" class="text-sm md:text-base text-gray-600 leading-relaxed line-clamp-1 transition-all duration-300"></p>
+                        <p id="mDesc" class="text-sm md:text-base text-gray-600 leading-relaxed transition-all duration-300"></p>
                         <button id="readMoreBtn" onclick="toggleReadMore()" class="mt-2 text-xs font-bold text-black hover:underline flex items-center gap-1">Read full description <span>↓</span></button>
                     </div>
                     <div id="mExtraInfo" style="display:none" class="mb-6 text-sm space-y-1"></div>
@@ -1205,7 +1224,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             if (!STORES_URL || document.getElementById('nearBtn')) return;
             const btn = nearEl_('button', '', ''); btn.id = 'nearBtn'; btn.type = 'button'; btn.title = 'Stores near you'; btn.setAttribute('aria-label', 'Stores near you'); btn.className = 'p-2 rounded-full bg-gray-100';
             btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s-7-6.2-7-11a7 7 0 1114 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
-            const anchor = document.querySelector('[onclick="openProfileModal()"]'); if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(btn, anchor); else { const nav = document.querySelector('nav'); if (nav) nav.appendChild(btn); }
+            const cartB = document.querySelector('nav [onclick="openCart()"]'); if (cartB && cartB.parentNode) cartB.parentNode.insertBefore(btn, cartB.nextSibling); else { const anchor = document.querySelector('[onclick="openProfileModal()"]'); if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(btn, anchor); else { const nav = document.querySelector('nav'); if (nav) nav.appendChild(btn); } }
             btn.onclick = () => openNearDialog_();
             const saved = nearGet_(); if (/^\d{6}$/.test(saved)) pincodePoint_(saved).then(pt => { if (pt) runNear_({ lat: pt.lat, lng: pt.lng, label: saved }, saved); });
         }
@@ -1420,7 +1439,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
                 const lq = isModal ? '' : (item.lq || LQ_[item.id]), bg = lq ? ` style="background:url('${esc_(lqSvgUri(lq))}') center/cover;animation:none"` : '';
                 return `<div class="media-wrap"${bg}><img src="${esc_(src)}"${!isModal && src !== item.img ? ` data-o="${esc_(item.img)}"` : ''} alt="${esc_(item.title)}" class="${cls}" ${loadAttrs} ${onload}>${badge}</div>`;
             }
-            if (hasVideo) return videoEmbedHtml_(item);
+            if (hasVideo) return videoEmbedHtml_(item, true);
             return '';
         }
         // ---------- Multi-image gallery (modal only — the grid card always just
@@ -1505,7 +1524,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
         // Single entry point for (re)drawing the modal's photo + its overlay controls.
         function setModalMedia_(item) {
             const c = document.getElementById('zContainer');
-            c.classList.remove('video-mode', 'laid', 'can-pan');
+            c.classList.remove('video-mode', 'laid', 'can-pan', 'video-ig');
             c.style.height = '';
             _zoom = 1;
             document.getElementById('mMedia').innerHTML = modalMediaHtml_(item);
@@ -1521,36 +1540,41 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             currentImageIndex = i;
             setModalMedia_(currentItem);
         }
-        function videoEmbedHtml_(item) {
-            const yt = item.video.match(/(?:youtu\.be\/|youtube\.com.*(?:v=|shorts\/))([\w-]{11})/);
-            if (yt) {
-                const orientation = /shorts\//.test(item.video) ? 'portrait' : 'landscape';
-                return `<div class="video-frame ${orientation}"><iframe src="https://www.youtube.com/embed/${yt[1]}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen loading="lazy"></iframe></div>`;
-            }
-            if (item.video.includes('instagram.com')) return `<blockquote class="instagram-media rounded-2xl" data-instgrm-permalink="${esc_(item.video)}" style="width:100%"></blockquote>`;
-            return `<a href="${esc_(item.video)}" target="_blank" rel="noopener noreferrer" class="text-black text-xs font-bold underline">Watch video →</a>`;
+        function videoEmbedHtml_(item, lazy) {
+            const v = String(item.video || '').trim(); if (!v || !/^https?:\/\//i.test(v)) return ''; // only web addresses: a javascript: link typed into the video field must never become a clickable link
+            const frame = (cls, inner) => `<div class="video-frame ${cls}">${inner}</div>`, ld = lazy ? ' loading="lazy"' : '';
+            const yt = v.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|embed\/|live\/|v\/))([\w-]{11})/) || v.match(/youtube\.com.*[?&]v=([\w-]{11})/);
+            if (yt) return frame(/\/shorts\//.test(v) ? 'portrait' : 'landscape', `<iframe src="https://www.youtube.com/embed/${yt[1]}?rel=0&playsinline=1" title="Product video" frameborder="0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"${ld}></iframe>`);
+            const vm = v.match(/vimeo\.com\/(?:video\/)?(\d{6,12})/);
+            if (vm) return frame('landscape', `<iframe src="https://player.vimeo.com/video/${vm[1]}" title="Product video" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"${ld}></iframe>`);
+            const dr = v.match(/drive\.google\.com\/file\/d\/([\w-]{10,})/);
+            if (dr) return frame('landscape', `<iframe src="https://drive.google.com/file/d/${dr[1]}/preview" title="Product video" frameborder="0" allow="autoplay; fullscreen" allowfullscreen${ld}></iframe>`);
+            if (/^https?:\/\/[^\s]+\.(mp4|webm|mov|m4v|ogv)(\?[^\s]*)?(#[^\s]*)?$/i.test(v)) return frame('landscape', `<video src="${esc_(v)}" controls playsinline preload="metadata" onloadedmetadata="this.parentNode.className='video-frame '+(this.videoHeight>this.videoWidth?'portrait':'landscape')"></video>`);
+            if (v.includes('instagram.com')) return `<blockquote class="instagram-media" data-instgrm-permalink="${esc_(v)}" data-instgrm-version="14" style="width:100%;margin:0 auto;background:#fff"></blockquote><a class="video-open-link" style="color:#111" href="${esc_(v)}" target="_blank" rel="noopener noreferrer">Open on Instagram</a>`;
+            return `<a href="${esc_(v)}" target="_blank" rel="noopener noreferrer" class="video-open-link">Watch the video &rarr;</a>`;
         }
-        // Swaps the modal's media area over to the actual video — only on an
-        // explicit tap of the video badge, so the grid never auto-embeds a pile
-        // of iframes at once, and the video gets its own properly-sized frame
-        // instead of being squeezed into the image's dimensions.
+        function loadInstagram_() { // the Instagram embed needs Instagram's own script; it was never loaded, so Instagram videos stayed blank
+            if (window.instgrm && window.instgrm.Embeds) { window.instgrm.Embeds.process(); return; }
+            if (document.getElementById('igEmbedJs')) return;
+            const s = document.createElement('script'); s.id = 'igEmbedJs'; s.async = true; s.src = 'https://www.instagram.com/embed.js';
+            s.onload = () => { try { window.instgrm.Embeds.process(); } catch (e) { /* the link below the video still works */ } };
+            document.body.appendChild(s);
+        }
         function playVideo_(id) {
             const item = allData.find(i => i.id === id);
             if (!item || !item.video) return;
             const mMedia = document.getElementById('mMedia');
             if (mMedia) {
                 const zc_ = document.getElementById('zContainer');
-                zc_.classList.add('video-mode'); zc_.style.height = '';
+                zc_.classList.add('video-mode'); zc_.classList.remove('laid', 'can-pan'); zc_.style.height = '';
+                zc_.classList.toggle('video-ig', /instagram\.com/.test(item.video));
                 const mc_ = document.querySelector('.modal-content'); if (mc_) mc_.style.setProperty('--img-col', '50%'); // video keeps the 50/50 split
                 document.getElementById('mControls').innerHTML = '';
-                let html = videoEmbedHtml_(item);
-                // No way back to the photo once in video mode was a real gap — add
-                // it whenever there's actually an image to switch back to.
-                if (item.img) html = `<div style="position:relative">${html}<button class="media-toggle-badge" onclick="event.stopPropagation(); showImage_('${esc_(jsq_(item.id))}')" title="Back to photo">📷 Photo</button></div>`;
-                mMedia.innerHTML = html;
+                const back = item.img ? `<button class="media-toggle-badge" onclick="event.stopPropagation(); showImage_('${esc_(jsq_(item.id))}')" title="Back to photo">\uD83D\uDCF7 Photo</button>` : '';
+                mMedia.innerHTML = `<div class="video-wrap">${videoEmbedHtml_(item)}${back}</div>`;
             }
-            if (window.instgrm) instgrm.Embeds.process();
-            gtag('event', 'video_play', { item_id: item.id, item_name: item.title });
+            if (/instagram\.com/.test(item.video)) loadInstagram_();
+            try { gtag('event', 'video_play', { item_id: item.id, item_name: item.title }); } catch (e) { /* analytics must never break the video */ }
         }
         function showImage_(id) {
             const item = allData.find(i => i.id === id);
@@ -2324,7 +2348,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
         }
         function toggleReadMore() {
             const descEl = document.getElementById('mDesc'), btnEl = document.getElementById('readMoreBtn');
-            if (descEl.classList.contains('line-clamp-3')) { descEl.classList.remove('line-clamp-3'); btnEl.innerHTML = 'Show less <span>↑</span>'; }
+            if (descEl.classList.contains('line-clamp-3')) { descEl.classList.remove('line-clamp-3', 'line-clamp-1'); btnEl.innerHTML = 'Show less <span>↑</span>'; }
             else { descEl.classList.add('line-clamp-3'); btnEl.innerHTML = 'Show more <span>↓</span>'; }
         }
 
