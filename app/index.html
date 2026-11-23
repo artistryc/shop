@@ -20,6 +20,110 @@
 <!-- Tailwind precompiled statically via the CLI — no runtime eval/new Function(), so this can never trip a CSP script-src rule the way cdn.tailwindcss.com did. Rebuild if new utility classes are added later (see build notes). -->
 
 <!-- GA4 measurement ID: change it inside the script below (GA_ID) -->
+<!-- human-qr:begin (source: MASTER/3-WEBSITE/shared/human-qr.js) -->
+<script>
+/* ArtistryC "I am human" check: scan the QR code with your phone, type the 6-digit number it shows.
+ * Self-contained (no outside library). Usage:
+ *   var hq = ArtistryCHumanQr.create(PLATFORM_URL);   // PLATFORM_URL = your Apps Script web app address (https://script.google.com/macros/s/.../exec)
+ *   parent.appendChild(hq.node);                       // the box: QR code, number field, "New QR code"
+ *   ... send hq.token() as captchaToken in the request ('' until the shopper typed 6 digits; undefined when the platform has the check switched off)
+ *   after a successful send: hq.reset()
+ * Nothing is drawn when the platform has the check off. */
+(function (root) {
+  // ---------------- QR encoder: byte mode, error correction L, versions 1-10 (up to 271 characters)
+  var EC = [null, [7, 1, 19, 0, 0], [10, 1, 34, 0, 0], [15, 1, 55, 0, 0], [20, 1, 80, 0, 0], [26, 1, 108, 0, 0], [18, 2, 68, 0, 0], [20, 2, 78, 0, 0], [24, 2, 97, 0, 0], [30, 2, 116, 0, 0], [18, 2, 68, 2, 69]];
+  var ALIGN = [null, [], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50]];
+  var EXP = [], LOG = []; (function () { var x = 1; for (var i = 0; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 256) x ^= 0x11d; } for (i = 255; i < 512; i++) EXP[i] = EXP[i - 255]; })();
+  function gmul(a, b) { return a && b ? EXP[LOG[a] + LOG[b]] : 0; }
+  function rsGen(n) { var g = [1]; for (var i = 0; i < n; i++) { var ng = new Array(g.length + 1).fill(0); for (var j = 0; j < g.length; j++) { ng[j] ^= g[j]; ng[j + 1] ^= gmul(g[j], EXP[i]); } g = ng; } return g; }
+  function rsEnc(data, n) { var g = rsGen(n), r = new Array(n).fill(0); data.forEach(function (d) { var f = d ^ r.shift(); r.push(0); for (var i = 0; i < n; i++) r[i] ^= gmul(g[i + 1], f); }); return r; }
+  function bch(v, poly, bitsData, bitsTotal) { var r = v << (bitsTotal - bitsData); for (var i = bitsData - 1; i >= 0; i--) if ((r >> (bitsTotal - bitsData + i)) & 1) r ^= poly << i; return (v << (bitsTotal - bitsData)) | r; }
+  function utf8(s) { var out = [], e = unescape(encodeURIComponent(s)); for (var i = 0; i < e.length; i++) out.push(e.charCodeAt(i)); return out; }
+  function encode(text) {
+    var bytes = utf8(text), ver = 0, i;
+    for (i = 1; i <= 10; i++) { var tot = EC[i][1] * EC[i][2] + EC[i][3] * EC[i][4]; if (bytes.length <= tot - (i < 10 ? 2 : 3)) { ver = i; break; } }
+    if (!ver) throw new Error('too long for the QR code');
+    var e = EC[ver], total = e[1] * e[2] + e[3] * e[4], bits = [];
+    var put = function (v, n) { for (var k = n - 1; k >= 0; k--) bits.push((v >> k) & 1); };
+    put(4, 4); put(bytes.length, ver < 10 ? 8 : 16); bytes.forEach(function (b) { put(b, 8); });
+    put(0, Math.min(4, total * 8 - bits.length)); while (bits.length % 8) bits.push(0);
+    var data = []; for (i = 0; i < bits.length; i += 8) { var v = 0; for (var k = 0; k < 8; k++) v = (v << 1) | bits[i + k]; data.push(v); }
+    for (var pad = 0xec; data.length < total; pad ^= 0xec ^ 0x11) data.push(pad);
+    var blocks = [], pos = 0; for (i = 0; i < e[1] + e[3]; i++) { var len = i < e[1] ? e[2] : e[4]; blocks.push(data.slice(pos, pos + len)); pos += len; }
+    var ecs = blocks.map(function (b) { return rsEnc(b, e[0]); }), final = [], maxLen = Math.max(e[2], e[4] || 0);
+    for (i = 0; i < maxLen; i++) blocks.forEach(function (b) { if (i < b.length) final.push(b[i]); });
+    for (i = 0; i < e[0]; i++) ecs.forEach(function (b) { final.push(b[i]); });
+    var size = ver * 4 + 17, M = [], F = []; for (i = 0; i < size; i++) { M.push(new Array(size).fill(0)); F.push(new Array(size).fill(false)); }
+    var set = function (r, c, v) { M[r][c] = v ? 1 : 0; F[r][c] = true; };
+    var finder = function (r, c) { for (var y = -1; y <= 7; y++) for (var x = -1; x <= 7; x++) { var rr = r + y, cc = c + x; if (rr < 0 || cc < 0 || rr >= size || cc >= size) continue; set(rr, cc, (y >= 0 && y <= 6 && (x === 0 || x === 6)) || (x >= 0 && x <= 6 && (y === 0 || y === 6)) || (y >= 2 && y <= 4 && x >= 2 && x <= 4)); } };
+    finder(0, 0); finder(0, size - 7); finder(size - 7, 0);
+    for (i = 8; i < size - 8; i++) { set(6, i, i % 2 === 0); set(i, 6, i % 2 === 0); }
+    var ap = ALIGN[ver]; ap.forEach(function (r) { ap.forEach(function (c) { if ((r === 6 && c === 6) || (r === 6 && c === ap[ap.length - 1]) || (c === 6 && r === ap[ap.length - 1])) return; for (var y = -2; y <= 2; y++) for (var x = -2; x <= 2; x++) set(r + y, c + x, Math.max(Math.abs(x), Math.abs(y)) !== 1); }); });
+    set(size - 8, 8, true); // dark module
+    var reserve = function () { for (var k = 0; k < 9; k++) { if (!F[8][k]) { F[8][k] = true; } if (!F[k][8]) { F[k][8] = true; } } for (k = 0; k < 8; k++) { F[8][size - 1 - k] = true; F[size - 1 - k][8] = true; } }; reserve();
+    if (ver >= 7) { var vi = bch(ver, 0x1f25, 6, 18); for (i = 0; i < 18; i++) { var bit = (vi >> i) & 1, a = Math.floor(i / 3), b = i % 3 + size - 11; set(a, b, bit); set(b, a, bit); } }
+    var fb = []; for (i = 0; i < final.length; i++) for (var k2 = 7; k2 >= 0; k2--) fb.push((final[i] >> k2) & 1);
+    var rem = ver >= 2 && ver <= 6 ? 7 : 0; for (i = 0; i < rem; i++) fb.push(0);
+    var idx = 0, up = true; for (var col = size - 1; col > 0; col -= 2) { if (col === 6) col--; for (var n = 0; n < size; n++) { var row = up ? size - 1 - n : n; for (var d = 0; d < 2; d++) { var cc2 = col - d; if (!F[row][cc2]) { M[row][cc2] = idx < fb.length ? fb[idx] : 0; idx++; } } } up = !up; }
+    var masks = [function (r, c) { return (r + c) % 2 === 0; }, function (r) { return r % 2 === 0; }, function (r, c) { return c % 3 === 0; }, function (r, c) { return (r + c) % 3 === 0; }, function (r, c) { return (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0; }, function (r, c) { return (r * c) % 2 + (r * c) % 3 === 0; }, function (r, c) { return ((r * c) % 2 + (r * c) % 3) % 2 === 0; }, function (r, c) { return ((r + c) % 2 + (r * c) % 3) % 2 === 0; }];
+    var build = function (m) {
+      var G = M.map(function (row) { return row.slice(); }); for (var r = 0; r < size; r++) for (var c = 0; c < size; c++) if (!F[r][c] || (r >= 0 && false)) { /* data area handled below */ }
+      for (r = 0; r < size; r++) for (c = 0; c < size; c++) { if (isData(r, c) && masks[m](r, c)) G[r][c] ^= 1; }
+      var f = bch((1 << 3) | m, 0x537, 5, 15) ^ 0x5412; // level L = 01
+      for (var j = 0; j < 15; j++) { var bt = (f >> j) & 1; if (j < 6) G[j][8] = bt; else if (j < 8) G[j + 1][8] = bt; else G[size - 15 + j][8] = bt; if (j < 8) G[8][size - 1 - j] = bt; else if (j < 9) G[8][15 - j] = bt; else G[8][15 - j - 1] = bt; }
+      G[size - 8][8] = 1; return G;
+    };
+    var dataMap = null; function isData(r, c) { return dataMap[r][c]; }
+    dataMap = M.map(function () { return []; }); // mark which cells carry data (not function patterns): replay the placement
+    (function () { var F2 = F.map(function (row) { return row.slice(); }); for (var r = 0; r < size; r++) for (var c = 0; c < size; c++) dataMap[r][c] = false; var ix = 0, up2 = true; for (var col2 = size - 1; col2 > 0; col2 -= 2) { if (col2 === 6) col2--; for (var n2 = 0; n2 < size; n2++) { var rw = up2 ? size - 1 - n2 : n2; for (var d2 = 0; d2 < 2; d2++) { var c3 = col2 - d2; if (!F2[rw][c3]) { dataMap[rw][c3] = true; ix++; } } } up2 = !up2; } })();
+    var penalty = function (G) {
+      var p = 0, r, c, run, k;
+      for (var pass = 0; pass < 2; pass++) for (r = 0; r < size; r++) { run = 1; for (c = 1; c < size; c++) { var a = pass ? G[c][r] : G[r][c], b = pass ? G[c - 1][r] : G[r][c - 1]; if (a === b) { run++; if (run === 5) p += 3; else if (run > 5) p++; } else run = 1; } }
+      for (r = 0; r < size - 1; r++) for (c = 0; c < size - 1; c++) { var v2 = G[r][c]; if (v2 === G[r][c + 1] && v2 === G[r + 1][c] && v2 === G[r + 1][c + 1]) p += 3; }
+      var pat = [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0], pat2 = pat.slice().reverse();
+      for (r = 0; r < size; r++) for (c = 0; c <= size - 11; c++) { var h1 = true, h2 = true, v1 = true, v3 = true; for (k = 0; k < 11; k++) { if (G[r][c + k] !== pat[k]) h1 = false; if (G[r][c + k] !== pat2[k]) h2 = false; if (G[c + k][r] !== pat[k]) v1 = false; if (G[c + k][r] !== pat2[k]) v3 = false; } p += 40 * ((h1 ? 1 : 0) + (h2 ? 1 : 0) + (v1 ? 1 : 0) + (v3 ? 1 : 0)); }
+      var dark = 0; G.forEach(function (row) { row.forEach(function (x) { dark += x; }); }); p += 10 * Math.floor(Math.abs(dark * 20 - size * size * 10) / (size * size));
+      return p;
+    };
+    var best = null, bestP = 1e9; for (var m2 = 0; m2 < 8; m2++) { var G = build(m2), pp = penalty(G); if (pp < bestP) { bestP = pp; best = G; } }
+    return best;
+  }
+  function svg(matrix, px) { var n = matrix.length, q = 4, s = (n + 2 * q) * px, d = ''; for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) if (matrix[r][c]) d += 'M' + ((c + q) * px) + ' ' + ((r + q) * px) + 'h' + px + 'v' + px + 'h-' + px + 'z'; return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + s + ' ' + s + '" width="' + s + '" height="' + s + '" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect width="100%" height="100%" fill="#fff"/><path d="' + d + '" fill="#000"/></svg>'; }
+
+  // ---------------- the box shown on a form
+  function create(platformUrl) {
+    var wrap = document.createElement('div'), state = { challenge: '', off: false, loading: false, dead: false };
+    wrap.style.cssText = 'margin:14px 0;padding:12px;border:1px solid #d9d9d9;border-radius:12px;background:#fafafa;text-align:center;display:none;font:14px system-ui,sans-serif;color:#222';
+    wrap.innerHTML = '<div style="font-weight:600;margin-bottom:6px">Quick check: are you a person?</div><div data-qr style="width:170px;height:170px;margin:0 auto 8px;display:flex;align-items:center;justify-content:center;color:#777;font-size:12px">Loading…</div>' +
+      '<div style="font-size:13px;color:#444;margin-bottom:8px">Scan this with your phone camera. Your phone shows a 6-digit number. Type it here.</div>' +
+      '<input data-code inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="______" aria-label="6-digit number from your phone" style="width:170px;max-width:100%;box-sizing:border-box;text-align:center;font-size:20px;letter-spacing:4px;padding:8px;border:1px solid #bbb;border-radius:8px">' +
+      '<div style="margin-top:8px"><a href="#" data-new style="font-size:13px;color:#0b57d0">New QR code</a></div><div data-msg style="color:#b00020;font-size:13px;margin-top:6px;min-height:1px"></div>';
+    var qrBox = wrap.querySelector('[data-qr]'), input = wrap.querySelector('[data-code]'), msg = wrap.querySelector('[data-msg]');
+    function load() {
+      if (!/^https:/.test(platformUrl || '') || state.loading) return; state.loading = true; input.value = ''; msg.textContent = ''; qrBox.textContent = 'Loading…';
+      fetch(platformUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ route: 'humanStart', payload: {} }) }).then(function (r) { return r.json(); }).then(function (j) {
+        state.loading = false;
+        if (j && j.ok && j.data && j.data.off) { state.off = true; wrap.style.display = 'none'; return; }
+        if (!j || !j.ok) { msg.textContent = (j && j.error && j.error.message) || 'Could not load the check. Please try again.'; qrBox.textContent = ''; return; }
+        state.off = false; state.challenge = j.data.challenge; wrap.style.display = 'block';
+        var sep = platformUrl.indexOf('?') === -1 ? '?' : '&'; qrBox.innerHTML = svg(encode(platformUrl + sep + 'hq=' + j.data.scan), 5); var s = qrBox.firstChild; s.style.width = '170px'; s.style.height = '170px';
+      }).catch(function () { state.loading = false; qrBox.textContent = ''; msg.textContent = 'Could not load the check. Check your connection and press New QR code.'; wrap.style.display = 'block'; });
+    }
+    wrap.querySelector('[data-new]').onclick = function (e) { e.preventDefault(); state.challenge = ''; load(); };
+    input.oninput = function () { input.value = input.value.replace(/\D/g, '').slice(0, 6); };
+    load();
+    return {
+      node: wrap,
+      token: function () { if (state.off) return undefined; return /^\d{6}$/.test(input.value) && state.challenge ? 'qr:' + state.challenge + ':' + input.value : ''; },
+      active: function () { return !state.off; },
+      reset: function () { state.challenge = ''; load(); },
+      error: function (m) { msg.textContent = m || ''; }
+    };
+  }
+  root.ArtistryCHumanQr = { create: create, encode: encode, svg: svg };
+})(typeof window !== 'undefined' ? window : this);
+</script>
+<!-- human-qr:end -->
 <script>
 /* ===== SETTINGS YOU MAY CHANGE =====
    ARTISTRYC_PLATFORM_URL : your Apps Script web app address (the /exec link). Used for shopper funnel analytics and online payment.
@@ -1169,10 +1273,12 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             showNearStrip_({ label: pin }, top); return { ok: true };
         }
         // Name + WhatsApp + pincode go to the master's "nearby_leads" tab (the shopper ticked the consent box).
-        function sendNearLead_(name, wa, pin) {
+        function sendNearLead_(name, wa, pin, token) {
             try { localStorage.setItem('near_lead', JSON.stringify({ name: name, wa: wa })); } catch (e) { /* private mode */ }
-            const U = window.ARTISTRYC_PLATFORM_URL || ''; if (!/^https:/.test(U)) return;
-            try { fetch(U, { method: 'POST', mode: 'no-cors', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ route: 'nearbyLead', payload: { name: name, whatsapp: wa, pincode: pin, consent: true } }) }).catch(() => {}); } catch (e) { /* ignore */ }
+            const U = window.ARTISTRYC_PLATFORM_URL || ''; if (!/^https:/.test(U)) return Promise.resolve({ ok: true });
+            // The shopper is told if the QR number was wrong. A network problem never stops them from seeing stores.
+            const vc = '';
+            return fetch(U, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ route: 'nearbyLead', payload: { name: name, whatsapp: wa, pincode: pin, consent: true, captchaToken: token || '' } }) }).then(r => r.json()).then(j => (j && j.ok === false) ? { error: (j.error && j.error.message) || 'Could not save. Please try again.' } : { ok: true }).catch(() => ({ ok: true }));
         }
         // Video call to see a product, only when the seller switched it on (Store > Branding). A seller's own https link, otherwise a WhatsApp chat to ask for a video call.
         function videoCallFor_(item) {
@@ -1197,6 +1303,7 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             const leadWa = nearEl_('input', fStyle); leadWa.type = 'tel'; leadWa.inputMode = 'numeric'; leadWa.maxLength = 14; leadWa.placeholder = 'Your WhatsApp number'; leadWa.autocomplete = 'tel'; leadWa.value = lead0.wa || (profile && profile.phone) || '';
             const leadLbl = nearEl_('label', 'display:flex;gap:8px;align-items:flex-start;font-size:12px;color:#6b7280;margin-top:10px'); const leadOk = nearEl_('input'); leadOk.type = 'checkbox'; leadOk.checked = !!lead0.wa; leadLbl.appendChild(leadOk); leadLbl.appendChild(nearEl_('span', '', 'I agree to be contacted on WhatsApp about shops and products near me.'));
             box.appendChild(leadName); box.appendChild(leadWa); box.appendChild(leadLbl);
+            const hq = window.ArtistryCHumanQr ? window.ArtistryCHumanQr.create(window.ARTISTRYC_PLATFORM_URL || '') : null; if (hq) box.appendChild(hq.node); // scan-the-QR check: keeps bots out of the leads list
             const msg = nearEl_('div', 'color:#b91c1c;font-weight:600;font-size:13px;margin-top:8px;min-height:0'); msg.setAttribute('role', 'alert'); box.appendChild(msg);
             const go = nearEl_('button', 'background:#000;color:#fff;border-radius:999px;padding:11px 20px;font-weight:800;margin-top:12px', 'Find stores'); go.type = 'submit';
             const geo = nearEl_('button', 'border:1px solid #d1d5db;border-radius:999px;padding:11px 16px;font-weight:700;margin:12px 0 0 8px', 'Use my location'); geo.type = 'button'; const cl = nearEl_('button', 'display:block;margin:12px auto 0;font-size:13px;color:#6b7280;text-decoration:underline', 'Close'); cl.type = 'button';
@@ -1209,7 +1316,10 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
                 if (!/^[6-9]\d{9}$/.test(wd)) { msg.textContent = 'Please enter a valid 10-digit WhatsApp number.'; return; }
                 if (!leadOk.checked) { msg.textContent = 'Please tick the box to continue.'; return; }
                 if (!/^[1-9]\d{5}$/.test(v)) { msg.textContent = 'Please enter a 6-digit pincode.'; return; }
-                sendNearLead_(nm, wd, v); go.disabled = true; go.textContent = 'Looking\u2026'; const pt = await pincodePoint_(v);
+                if (hq && hq.active() && !hq.token()) { msg.textContent = 'Please scan the QR code and type the number shown on your phone.'; return; }
+                go.disabled = true; go.textContent = 'Looking\u2026'; const lr = await sendNearLead_(nm, wd, v, hq ? hq.token() : '');
+                if (lr && lr.error) { msg.textContent = lr.error; go.disabled = false; go.textContent = 'Find stores'; if (hq) hq.reset(); return; }
+                const pt = await pincodePoint_(v);
                 if (!pt) { const r2 = await runNearPrefix_(v); if (r2.error) { msg.textContent = r2.error; go.disabled = false; go.textContent = 'Find stores'; return; } close(); return; }
                 const r = await runNear_({ lat: pt.lat, lng: pt.lng, label: v }, v); if (r.error) { msg.textContent = r.error; go.disabled = false; go.textContent = 'Find stores'; return; } close();
             };
@@ -2523,11 +2633,13 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
                 ${f('line1', 'Address', 'House no, street, area', 'text', 'autocomplete="address-line1" required')}${f('city', 'City', '', 'text', 'autocomplete="address-level2" required')}
                 <label style="display:block;margin:8px 0 2px;font-weight:700;font-size:13px">State</label><select name="state" required style="width:100%;padding:11px;border:1px solid #ccc;border-radius:10px;font-size:16px"><option value="">Choose&hellip;</option>${INDIA_STATES_.map(x => `<option>${x}</option>`).join('')}</select>
                 ${f('pincode', 'Pincode', '6 digits', 'text', 'autocomplete="postal-code" inputmode="numeric" maxlength="6" required')}${f('email', 'Email (optional, for your invoice)', '', 'email', 'autocomplete="email"')}
+                <div id="humanSlot"></div>
                 ${TURNSTILE_SITE_KEY ? `<div class="cf-turnstile" data-sitekey="${TURNSTILE_SITE_KEY}" style="margin-top:10px"></div>` : ''}
                 <p id="payMsg" role="status" style="min-height:20px;margin:10px 0 0"></p>
                 <button type="submit" id="payGo" style="width:100%;margin-top:6px;background:#111;color:#fff;border:0;border-radius:16px;padding:15px;font-weight:800;font-size:16px;cursor:pointer">Continue to payment</button>
                 <p style="margin:10px 0 0;font-size:12px;color:#666">Your details go to the seller to deliver your order. We never see your card or UPI PIN.</p></form>`;
             document.body.appendChild(box);
+            const hq = window.ArtistryCHumanQr ? window.ArtistryCHumanQr.create(PLATFORM_API_URL) : null; if (hq) box.querySelector('#humanSlot').appendChild(hq.node); // scan-the-QR check (hides itself when the platform has it off)
             if (TURNSTILE_SITE_KEY && !window.turnstile) { const sc = document.createElement('script'); sc.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js'; sc.async = true; document.head.appendChild(sc); }
             const form = box.querySelector('form'); try { const p0 = profile || {}; if (p0.name) form.name.value = p0.name; if (p0.phone) form.phone.value = String(p0.phone).replace(/\D/g, '').slice(-10); } catch (e) { /* no saved profile */ }
             box.querySelector('#payX').onclick = () => box.remove();
@@ -2535,10 +2647,10 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
                 ev.preventDefault(); const go = box.querySelector('#payGo'); go.disabled = true; payNote_('One moment\u2026');
                 const tok = form.querySelector('[name="cf-turnstile-response"]');
                 const body = { route: 'checkout', payload: { vendorCode: cart[0].vendorCode, items: cart.map(c => ({ productId: c.id, qty: c.qty })), returnUrl: location.origin + location.pathname,
-                    captchaToken: tok ? tok.value : '', customer: { name: form.name.value, phone: form.phone.value, email: form.email.value, line1: form.line1.value, city: form.city.value, state: form.state.value, pincode: form.pincode.value } } };
+                    captchaToken: (hq && hq.token()) || (tok ? tok.value : ''), customer: { name: form.name.value, phone: form.phone.value, email: form.email.value, line1: form.line1.value, city: form.city.value, state: form.state.value, pincode: form.pincode.value } } };
                 try {
                     const r = await fetch(PLATFORM_API_URL, { method: 'POST', body: JSON.stringify(body) }).then(x => x.json());
-                    if (!r || !r.ok) { payNote_((r && r.error && r.error.message) || 'Could not start the payment. Please order on WhatsApp.', true); go.disabled = false; return; }
+                    if (!r || !r.ok) { if (hq) hq.reset(); payNote_((r && r.error && r.error.message) || 'Could not start the payment. Please order on WhatsApp.', true); go.disabled = false; return; }
                     safeLocalStorageSet_('artistryc_pay', JSON.stringify({ orderId: r.data.orderId, track: r.data.track }));
                     gtag('event', 'begin_checkout', { currency: 'INR', value: total, method: 'online', items: cart.map(c => ({ item_id: c.id, item_name: c.title, item_brand: c.vendor, price: c.price, quantity: c.qty })) });
                     if (window.track_) { window.track_('pay_online_click', { v: cart[0].vendor, val: total }); }
