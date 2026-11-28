@@ -546,6 +546,7 @@ gtag('config', 'G-4QRB1X9WMF');
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m-10 0a2 2 0 100 4 2 2 0 000-4zm10 0a2 2 0 100 4 2 2 0 000-4z"/></svg>
                     <span id="cartCount" class="absolute -top-1 -right-1 bg-black text-white text-[9px] font-black rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">0</span>
                 </button>
+                <button id="nearBtn" type="button" onclick="openNearDialog_()" class="p-2 rounded-full bg-gray-100" title="Stores near you" aria-label="Stores near you"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s-7-6.2-7-11a7 7 0 1114 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></button>
                 <button onclick="toggleFilterPanel_()" class="p-2 rounded-full bg-gray-100" title="Filters">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M7 12h10M10 18h4"/></svg>
                 </button>
@@ -1331,7 +1332,9 @@ if (window.__STORE_BLOCKED) throw new Error('This copy is not on an official add
             };
         }
         function initNear_() {
-            if (!STORES_URL || document.getElementById('nearBtn')) return;
+            const fixed = document.getElementById('nearBtn');
+            if (!STORES_URL) { if (fixed) fixed.remove(); return; }
+            if (fixed) { fixed.onclick = () => openNearDialog_(); const sv = nearGet_(); if (/^\d{6}$/.test(sv)) pincodePoint_(sv).then(pt => { if (pt) runNear_({ lat: pt.lat, lng: pt.lng, label: sv }, sv); }); return; }
             const btn = nearEl_('button', '', ''); btn.id = 'nearBtn'; btn.type = 'button'; btn.title = 'Stores near you'; btn.setAttribute('aria-label', 'Stores near you'); btn.className = 'p-2 rounded-full bg-gray-100';
             btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s-7-6.2-7-11a7 7 0 1114 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
             const cartB = document.querySelector('nav [onclick="openCart()"]'); if (cartB && cartB.parentNode) cartB.parentNode.insertBefore(btn, cartB.nextSibling); else { const anchor = document.querySelector('[onclick="openProfileModal()"]'); if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(btn, anchor); else { const nav = document.querySelector('nav'); if (nav) nav.appendChild(btn); } }
